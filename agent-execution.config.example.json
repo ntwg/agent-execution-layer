@@ -1,0 +1,44 @@
+{
+  "configVersion": 2,
+  "enabled": true,
+  "organizationUrl": "https://dev.azure.com/your-org",
+  "project": "your-project",
+  "repositoryId": "your-repository-id",
+  "defaultBranch": "main",
+  "defaultAgent": "codex",
+  "defaultWorkItemType": "Task",
+  "defaultAreaPath": "your-project",
+  "defaultIterationPath": "your-project",
+  "sharedTags": [
+    "agent-managed"
+  ],
+  "agents": [
+    {
+      "key": "codex",
+      "tag": "agent:codex",
+      "branchPrefix": "codex",
+      "defaultAssignee": ""
+    },
+    {
+      "key": "claude",
+      "tag": "agent:claude",
+      "branchPrefix": "claude",
+      "defaultAssignee": ""
+    }
+  ],
+  "stateMap": {
+    "new": "New",
+    "active": "Active",
+    "done": "Closed"
+  },
+  "prDefaults": {
+    "reviewerMode": "off",
+    "reviewerRequired": false,
+    "syncWorkItemTags": true,
+    "syncTagMode": "non-agent"
+  },
+  "reportDefaults": {
+    "staleDays": 7,
+    "recentDays": 7
+  }
+}

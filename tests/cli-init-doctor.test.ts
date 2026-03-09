@@ -1,0 +1,199 @@
+import assert from 'node:assert/strict';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import test from 'node:test';
+import { DEFAULT_CONFIG_FILENAME } from '../scripts/lib/config.js';
+
+const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
+const TSX_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
+const CLI_PATH = join(REPO_ROOT, 'scripts', 'ado-workflow.ts');
+const TEST_REPOSITORY_ID = '11111111-1111-1111-1111-111111111111';
+
+function makeTempDir(): string {
+  return mkdtempSync(join(tmpdir(), 'ael-cli-test-'));
+}
+
+function writeExecutable(path: string, body: string): void {
+  writeFileSync(path, body, 'utf8');
+  chmodSync(path, 0o755);
+}
+
+function installStubCommands(workspace: string): string {
+  const binDir = join(workspace, 'bin');
+  mkdirSync(binDir, { recursive: true });
+
+  writeExecutable(join(binDir, 'git'), `#!/usr/bin/env node
+const args = process.argv.slice(2);
+const workspace = process.env.AEL_TEST_WORKSPACE;
+const remote = process.env.AEL_TEST_REMOTE;
+const branch = process.env.AEL_TEST_BRANCH || 'main';
+
+function out(value) {
+  process.stdout.write(value);
+}
+
+function fail() {
+  process.stderr.write('unsupported git args: ' + args.join(' ') + '\\n');
+  process.exit(1);
+}
+
+if (args[0] === 'rev-parse' && args[1] === '--show-toplevel') {
+  out(workspace + '\\n');
+} else if (args[0] === 'remote' && args[1] === 'get-url' && args[2] === 'origin') {
+  out(remote + '\\n');
+} else if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref' && args[2] === 'origin/HEAD') {
+  out('origin/' + branch + '\\n');
+} else if (args[0] === 'remote' && args[1] === 'show' && args[2] === 'origin') {
+  out('* remote origin\\n  HEAD branch: ' + branch + '\\n');
+} else if (args[0] === 'ls-remote' && args.includes('--heads') && args[args.length - 1] === branch) {
+  out('deadbeef\\trefs/heads/' + branch + '\\n');
+} else {
+  fail();
+}
+`);
+
+  writeExecutable(join(binDir, 'az'), `#!/usr/bin/env node
+const args = process.argv.slice(2);
+
+function out(value) {
+  process.stdout.write(value);
+}
+
+function fail() {
+  process.stderr.write('unsupported az args: ' + args.join(' ') + '\\n');
+  process.exit(1);
+}
+
+if (args[0] === 'version') {
+  out(JSON.stringify({ 'azure-cli': '2.60.0' }));
+} else if (args[0] === 'extension' && args[1] === 'show' && args[2] === '--name' && args[3] === 'azure-devops') {
+  out(JSON.stringify({ name: 'azure-devops' }));
+} else if (args[0] === 'account' && args[1] === 'show') {
+  out(JSON.stringify({
+    user: { name: 'agent@example.com' },
+    tenantId: 'tenant-id',
+    id: 'subscription-id',
+  }));
+} else if (args[0] === 'account' && args[1] === 'get-access-token') {
+  out('test-access-token\\n');
+} else if (args[0] === 'repos' && args[1] === 'show') {
+  const repositoryIndex = args.indexOf('--repository');
+  const repository = repositoryIndex >= 0 ? args[repositoryIndex + 1] : '${TEST_REPOSITORY_ID}';
+  const queryIndex = args.indexOf('--query');
+  const query = queryIndex >= 0 ? args[queryIndex + 1] : undefined;
+  if (query === 'id') {
+    out('${TEST_REPOSITORY_ID}\\n');
+  } else {
+    out(JSON.stringify({ id: repository, name: 'agent-execution-layer' }));
+  }
+} else if (args[0] === 'devops' && args[1] === 'project' && args[2] === 'show') {
+  out(JSON.stringify({ name: 'agent-execution-layer' }));
+} else if (args[0] === 'boards' && args[1] === 'query') {
+  out(JSON.stringify({ workItems: [] }));
+} else if (args[0] === 'repos' && args[1] === 'pr' && args[2] === 'list') {
+  out(JSON.stringify([]));
+} else {
+  fail();
+}
+`);
+
+  return binDir;
+}
+
+function runCli(args: string[], workspace: string, extraEnv: Record<string, string>): string {
+  return execFileSync(TSX_BIN, [CLI_PATH, ...args], {
+    cwd: workspace,
+    env: {
+      ...process.env,
+      ...extraEnv,
+    },
+    encoding: 'utf8',
+  });
+}
+
+test('init writes a local generated config and doctor/smoke pass with stubs', t => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const binDir = installStubCommands(workspace);
+  const env = {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    AEL_TEST_WORKSPACE: workspace,
+    AEL_TEST_REMOTE: 'https://dev.azure.com/example-org/agent-execution-layer/_git/agent-execution-layer',
+    AEL_TEST_BRANCH: 'main',
+  };
+
+  const initOutput = runCli([
+    'init',
+    '--organization-url', 'https://dev.azure.com/example-org',
+    '--project', 'agent-execution-layer',
+    '--repository', 'agent-execution-layer',
+    '--default-branch', 'main',
+    '--agents', 'codex;claude',
+    '--default-agent', 'codex',
+  ], workspace, env);
+
+  const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
+  assert.ok(existsSync(configPath));
+  assert.match(initOutput, /config: .*agent-execution\.config\.local\.json/);
+
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+    repositoryId: string;
+    defaultBranch: string;
+    defaultAgent: string;
+  };
+  assert.equal(config.repositoryId, TEST_REPOSITORY_ID);
+  assert.equal(config.defaultBranch, 'main');
+  assert.equal(config.defaultAgent, 'codex');
+
+  const doctorOutput = runCli(['doctor'], workspace, env);
+  assert.match(doctorOutput, /PASS git repository/);
+  assert.match(doctorOutput, /PASS repository access/);
+  assert.match(doctorOutput, /PASS configured default branch/);
+
+  const statusJson = JSON.parse(runCli(['status', '--json'], workspace, env)) as {
+    backend: string;
+    validation: { ok: boolean };
+    nextSteps: string[];
+  };
+  assert.equal(statusJson.backend, 'azure-devops');
+  assert.equal(statusJson.validation.ok, true);
+  assert.deepEqual(statusJson.nextSteps, [
+    'ael doctor',
+    'ael next -- --agent <agent-key>',
+  ]);
+
+  const doctorJson = JSON.parse(runCli(['doctor', '--json'], workspace, env)) as {
+    ok: boolean;
+    checks: Array<{ label: string; ok: boolean }>;
+  };
+  assert.equal(doctorJson.ok, true);
+  assert.ok(doctorJson.checks.some(check => check.label === 'repository access' && check.ok));
+
+  const nextJson = JSON.parse(runCli(['next', '--agent', 'codex', '--json'], workspace, env)) as {
+    ok: boolean;
+    source: string;
+    count: number;
+    workItems: unknown[];
+  };
+  assert.equal(nextJson.ok, true);
+  assert.equal(nextJson.source, 'none');
+  assert.equal(nextJson.count, 0);
+  assert.deepEqual(nextJson.workItems, []);
+
+  const listJson = JSON.parse(runCli(['list', '--agent', 'codex', '--json'], workspace, env)) as {
+    ok: boolean;
+    count: number;
+    workItems: unknown[];
+  };
+  assert.equal(listJson.ok, true);
+  assert.equal(listJson.count, 0);
+  assert.deepEqual(listJson.workItems, []);
+
+  const smokeOutput = runCli(['smoke'], workspace, env);
+  assert.match(smokeOutput, /PASS work item query smoke/);
+  assert.match(smokeOutput, /PASS pull request list smoke/);
+});

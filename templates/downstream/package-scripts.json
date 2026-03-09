@@ -1,0 +1,20 @@
+{
+  "scripts": {
+    "ael:install": "ael install",
+    "ael:help": "ael",
+    "ael:status": "ael status --json",
+    "ael:validate-config": "ael validate-config --json",
+    "ael:init": "ael init",
+    "ael:doctor": "ael doctor --json",
+    "ael:smoke": "ael smoke --json",
+    "ael:list": "ael list --json",
+    "ael:next": "ael next --json",
+    "ael:create": "ael create",
+    "ael:start": "ael start",
+    "ael:commit": "ael commit",
+    "ael:pr": "ael pr",
+    "ael:done": "ael done",
+    "ael:audit": "ael audit",
+    "ael:report": "ael report"
+  }
+}
