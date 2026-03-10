@@ -11,6 +11,7 @@ This project keeps a lightweight changelog.
 ## Unreleased
 
 - Fixed the `npm test` script to use a shell-safe test file glob so Node 20 CI runs execute the suite instead of treating `**` literally.
+- Added editable backlog prompt commands (`backlog-create`, `backlog-polish`) backed by `.ael/settings.json`, with install/adoption support and downstream examples.
 
 ## 0.1.0 - 2026-03-10
 

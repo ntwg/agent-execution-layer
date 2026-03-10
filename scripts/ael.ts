@@ -6,6 +6,7 @@ import {
   printHelp,
   printStatus,
 } from './lib/ado-cli-bootstrap.js';
+import { commandBacklogCreate, commandBacklogPolish } from './lib/ado-cli-backlog.js';
 import { commandInstall, commandUninstall } from './lib/ado-cli-install.js';
 import {
   commandAudit,
@@ -40,6 +41,14 @@ async function main(): Promise<void> {
       return;
     case 'validate-config':
       commandValidateConfig(args);
+      return;
+    case 'backlog-create':
+    case 'create-backlog-items':
+      commandBacklogCreate(args);
+      return;
+    case 'backlog-polish':
+    case 'polish-backlog':
+      commandBacklogPolish(args);
       return;
     case 'install':
       commandInstall(args);

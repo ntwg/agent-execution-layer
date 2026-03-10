@@ -20,9 +20,14 @@ Tracked files:
 - `.ael/install.json`
 - `.ael/agent-guide.md`
 - `.ael/project-contract.md`
+- `.ael/settings.json`
 
 Generated local state:
 
 - `.ael/config.local.json`
 
 That local config file is intentionally ignored by `.ael/.gitignore`.
+
+Editable prompt settings:
+
+- `.ael/settings.json`

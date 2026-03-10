@@ -11,6 +11,7 @@ The target state is:
 - generate repo-local config with `ael init`
 - keep AEL metadata in a hidden `.ael/` directory
 - give agents one obvious root-level entrypoint in the downstream repo's `AGENTS.md`
+- let teams customize backlog-analysis prompts through `.ael/settings.json`
 
 This keeps the workflow engine reusable while leaving project-specific validation and escalation rules in the downstream repo.
 
@@ -45,6 +46,7 @@ Default install mode is intentionally minimal:
 - no root `.gitignore` mutation
 - tracked `.ael/.gitignore` handles local AEL state
 - repo-local instructions and policy stay under `.ael/`
+- backlog prompt templates stay editable in `.ael/settings.json`
 
 If a downstream repo wants repo-local script shortcuts, run `ael install --with-scripts`.
 If a downstream repo wants the root discovery stub somewhere other than `AGENTS.md`, run `ael install --entrypoint-file <path>`.
@@ -67,6 +69,7 @@ Use the templates in:
 - `templates/downstream/AGENTS.md`
 - `templates/downstream/agent-guide.md`
 - `templates/downstream/AEL-PROJECT-CONTRACT.md`
+- `templates/downstream/settings.json`
 
 Minimum downstream setup:
 
@@ -74,9 +77,10 @@ Minimum downstream setup:
 2. run `ael install`
 3. review the generated root `AGENTS.md` discovery stub
 4. fill out `.ael/project-contract.md` with repo-specific validation and escalation rules
-5. run `npx ael init` or your package-manager equivalent
-6. run `npx ael doctor` or your package-manager equivalent
-7. run `npx ael status` or your package-manager equivalent
+5. edit `.ael/settings.json` if you want custom backlog-create/backlog-polish prompts
+6. run `npx ael init` or your package-manager equivalent
+7. run `npx ael doctor` or your package-manager equivalent
+8. run `npx ael status` or your package-manager equivalent
 
 If the repo prefers `npm run ael:*` scripts, use `ael install --with-scripts` instead.
 If the repo already manages its own root `AGENTS.md`, use `ael install --no-root-agents` and point that existing file at `.ael/agent-guide.md`.
@@ -125,6 +129,7 @@ For that to work, the downstream repo must clearly define:
 - creating `.ael/install.json`
 - creating `.ael/agent-guide.md`
 - creating `.ael/project-contract.md`
+- creating `.ael/settings.json`
 - keeping `.ael/config.local.json` ignored through `.ael/.gitignore` while the committed guide and contract remain visible
 
 See [examples/downstream-minimal](../examples/downstream-minimal) for a copyable minimal layout after install.
@@ -134,6 +139,7 @@ Optional standard mode:
 
 - `ael install --with-scripts` also adds repo-local `ael:*` package scripts
 - `ael install --dry-run` previews the exact files and scripts AEL would touch
+- script mode also exposes `ael:backlog-create` and `ael:backlog-polish`
 
 Optional custom entrypoint mode:
 
@@ -159,6 +165,7 @@ It checks:
 - `.ael/.gitignore`
 - `.ael/agent-guide.md`
 - `.ael/project-contract.md`
+- `.ael/settings.json`
 - the expected root discovery entrypoint file
 - required `ael:*` scripts when install mode is `--with-scripts`
 

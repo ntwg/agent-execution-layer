@@ -54,7 +54,7 @@ As of March 10, 2026:
 - `defaultBranch` is configurable instead of hardcoded in the main command paths
 - agent identities are config-driven instead of fixed to `codex|claude`
 - `ael:init`, `ael:doctor`, and `ael:smoke` now exist for bootstrap and preflight
-- `install` now defaults to a minimal downstream footprint: a root discovery stub plus `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, and `.ael/project-contract.md`; `--with-scripts`, `--entrypoint-file`, and `--no-root-agents` tune that footprint
+- `install` now defaults to a minimal downstream footprint: a root discovery stub plus `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, `.ael/project-contract.md`, and `.ael/settings.json`; `--with-scripts`, `--entrypoint-file`, and `--no-root-agents` tune that footprint
 - `ael:init` writes generated local config to `.ael/config.local.json`
 - `ael:init` now auto-detects default area and iteration paths when Azure Boards returns them
 - the CLI has extracted `config`, `ado-bootstrap`, and `pr-description` helper modules under `scripts/lib`
@@ -80,6 +80,8 @@ npm run ael:init
 npm run ael:doctor
 npm run ael:smoke
 npm run ael:validate-config
+npm run ael:backlog-create
+npm run ael:backlog-polish
 npm run ael:status
 npm run ael:help
 npm run ael:report -- --limit 5
@@ -151,6 +153,7 @@ Template:
 - `agent-execution.config.example.json`
 - `docs/ADOPTING-AEL.md`
 - `templates/downstream/*`
+- `.ael/settings.json`
 - `docs/RELEASE-POLICY.md`
 - `CHANGELOG.md`
 

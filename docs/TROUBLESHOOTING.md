@@ -30,6 +30,20 @@ Recommended fix:
 3. re-run `ael install --force`
 4. if the repo owns a custom root instructions file, re-run `ael install --entrypoint-file <path>` or `ael install --no-root-agents`
 
+## `backlog-create` or `backlog-polish` output is not what you want
+
+Typical cause:
+
+- the repo is still using the default prompt templates
+- `.ael/settings.json` was edited into invalid JSON
+
+Recommended fix:
+
+1. edit `.ael/settings.json`
+2. adjust `promptTemplates.backlogCreate` and `promptTemplates.backlogPolish`
+3. re-run `ael backlog-create` or `ael backlog-polish`
+4. if the file is broken, restore it from the installed template or re-run `ael install --force`
+
 ## `ael init` cannot detect the Azure DevOps target
 
 Typical causes:

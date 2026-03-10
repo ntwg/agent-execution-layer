@@ -46,6 +46,17 @@ Run these before moving a PR out of draft:
 Repo-specific policy lives in:
 
 - `.ael/project-contract.md`
+- `.ael/settings.json` controls the backlog-create/backlog-polish prompt templates
+
+## Backlog Hygiene
+
+When you need to identify missing follow-up work or clean up the existing backlog, use:
+
+- `npm run ael:status`
+- `npm run ael:report`
+- `npm run ael:audit -- --state open --limit 100`
+- `npm run ael:backlog-create`
+- `npm run ael:backlog-polish`
 
 ## Human Supervision
 

@@ -72,6 +72,7 @@ export const DEFAULT_AGENT_GUIDE_FILENAME = `${AEL_DIRECTORY}/agent-guide.md`;
 export const DEFAULT_PROJECT_CONTRACT_FILENAME = `${AEL_DIRECTORY}/project-contract.md`;
 export const DEFAULT_AEL_GITIGNORE_FILENAME = `${AEL_DIRECTORY}/.gitignore`;
 export const DEFAULT_INSTALL_MANIFEST_FILENAME = `${AEL_DIRECTORY}/install.json`;
+export const DEFAULT_SETTINGS_FILENAME = `${AEL_DIRECTORY}/settings.json`;
 
 export const DEFAULT_PR_DEFAULTS = {
   reviewerMode: 'off' as ReviewerMode,

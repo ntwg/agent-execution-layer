@@ -9,6 +9,7 @@
     "gitignore": ".ael/.gitignore",
     "agentGuide": ".ael/agent-guide.md",
     "projectContract": ".ael/project-contract.md",
-    "config": ".ael/config.local.json"
+    "config": ".ael/config.local.json",
+    "settings": ".ael/settings.json"
   }
 }

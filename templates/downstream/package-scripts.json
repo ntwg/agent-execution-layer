@@ -5,6 +5,8 @@
     "ael:help": "ael",
     "ael:status": "ael status --json",
     "ael:validate-config": "ael validate-config --json",
+    "ael:backlog-create": "ael backlog-create",
+    "ael:backlog-polish": "ael backlog-polish",
     "ael:init": "ael init",
     "ael:doctor": "ael doctor --json",
     "ael:smoke": "ael smoke --json",

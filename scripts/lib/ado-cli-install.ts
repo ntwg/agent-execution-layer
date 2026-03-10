@@ -8,6 +8,7 @@ import {
   DEFAULT_CONFIG_FILENAME,
   DEFAULT_INSTALL_MANIFEST_FILENAME,
   DEFAULT_PROJECT_CONTRACT_FILENAME,
+  DEFAULT_SETTINGS_FILENAME,
 } from './config.js';
 import {
   detectPackageManagerCommand,
@@ -47,6 +48,7 @@ interface InstallManifest {
     agentGuide: string;
     projectContract: string;
     config: string;
+    settings: string;
   };
 }
 
@@ -133,6 +135,10 @@ function applyInstallTemplate(
     workflowCommitCommand: string;
     workflowPrCommand: string;
     workflowDoneCommand: string;
+    workflowAuditCommand: string;
+    workflowReportCommand: string;
+    workflowBacklogCreateCommand: string;
+    workflowBacklogPolishCommand: string;
   },
 ): string {
   const validationBlock =
@@ -159,7 +165,11 @@ function applyInstallTemplate(
     .replaceAll('{{WORKFLOW_START_COMMAND}}', context.workflowStartCommand)
     .replaceAll('{{WORKFLOW_COMMIT_COMMAND}}', context.workflowCommitCommand)
     .replaceAll('{{WORKFLOW_PR_COMMAND}}', context.workflowPrCommand)
-    .replaceAll('{{WORKFLOW_DONE_COMMAND}}', context.workflowDoneCommand);
+    .replaceAll('{{WORKFLOW_DONE_COMMAND}}', context.workflowDoneCommand)
+    .replaceAll('{{WORKFLOW_AUDIT_COMMAND}}', context.workflowAuditCommand)
+    .replaceAll('{{WORKFLOW_REPORT_COMMAND}}', context.workflowReportCommand)
+    .replaceAll('{{WORKFLOW_BACKLOG_CREATE_COMMAND}}', context.workflowBacklogCreateCommand)
+    .replaceAll('{{WORKFLOW_BACKLOG_POLISH_COMMAND}}', context.workflowBacklogPolishCommand);
 }
 
 function normalizeAelWorkflowBlock(content: string): string {
@@ -294,6 +304,7 @@ function renderInstallManifest(summary: {
         agentGuide: DEFAULT_AGENT_GUIDE_FILENAME,
         projectContract: DEFAULT_PROJECT_CONTRACT_FILENAME,
         config: DEFAULT_CONFIG_FILENAME,
+        settings: DEFAULT_SETTINGS_FILENAME,
       },
     },
     null,
@@ -366,6 +377,10 @@ function readInstallManifest(path: string): InstallManifest | undefined {
           typeof files.config === 'string' && files.config.trim()
             ? files.config.trim()
             : DEFAULT_CONFIG_FILENAME,
+        settings:
+          typeof files.settings === 'string' && files.settings.trim()
+            ? files.settings.trim()
+            : DEFAULT_SETTINGS_FILENAME,
       },
     };
   } catch {
@@ -583,6 +598,34 @@ export function commandInstall(args: string[]): void {
       ' -- --id <id> --summary "<outcome>" --impact "<value>"',
       packageJsonExists,
     ),
+    workflowAuditCommand: formatDownstreamWorkflowCommand(
+      'audit',
+      installMode,
+      runner,
+      ' -- --state open --limit 100',
+      packageJsonExists,
+    ),
+    workflowReportCommand: formatDownstreamWorkflowCommand(
+      'report',
+      installMode,
+      runner,
+      '',
+      packageJsonExists,
+    ),
+    workflowBacklogCreateCommand: formatDownstreamWorkflowCommand(
+      'backlog-create',
+      installMode,
+      runner,
+      '',
+      packageJsonExists,
+    ),
+    workflowBacklogPolishCommand: formatDownstreamWorkflowCommand(
+      'backlog-polish',
+      installMode,
+      runner,
+      '',
+      packageJsonExists,
+    ),
   };
 
   const addedScripts: string[] = [];
@@ -715,6 +758,15 @@ export function commandInstall(args: string[]): void {
   );
   recordInstallFile(summary, aelGitignoreResult.status, aelGitignoreResult.path);
 
+  const settingsPath = join(workspace, DEFAULT_SETTINGS_FILENAME);
+  const settingsResult = writeTemplateFile(
+    settingsPath,
+    loadDownstreamTemplate('settings.json'),
+    force,
+    dryRun,
+  );
+  recordInstallFile(summary, settingsResult.status, settingsResult.path);
+
   const installManifestPath = join(workspace, DEFAULT_INSTALL_MANIFEST_FILENAME);
   const installManifestResult = writeTemplateFile(
     installManifestPath,
@@ -821,6 +873,7 @@ export function commandUninstall(args: string[]): void {
     installManifest?.files.projectContract ?? DEFAULT_PROJECT_CONTRACT_FILENAME,
     installManifest?.files.gitignore ?? DEFAULT_AEL_GITIGNORE_FILENAME,
     installManifest?.files.config ?? DEFAULT_CONFIG_FILENAME,
+    installManifest?.files.settings ?? DEFAULT_SETTINGS_FILENAME,
     DEFAULT_INSTALL_MANIFEST_FILENAME,
   ]);
 

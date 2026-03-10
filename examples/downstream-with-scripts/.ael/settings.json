@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "promptTemplates": {
+    "backlogCreate": "Review `{{REPOSITORY_NAME}}`, inspect the open backlog with `{{WORKFLOW_REPORT_COMMAND}}` and `{{WORKFLOW_LIST_OPEN_COMMAND}}`, identify high-value gaps, then create only the small, concrete Azure DevOps items that are truly missing. Read `{{AEL_AGENT_GUIDE_PATH}}` and `{{AEL_PROJECT_CONTRACT_PATH}}` first.",
+    "backlogPolish": "Review the existing backlog for `{{REPOSITORY_NAME}}`, use `{{WORKFLOW_REPORT_COMMAND}}` and `{{WORKFLOW_AUDIT_COMMAND}}`, and refine titles, priorities, tags, and links without inventing unrelated new work. Read `{{AEL_AGENT_GUIDE_PATH}}` and `{{AEL_PROJECT_CONTRACT_PATH}}` first."
+  }
+}

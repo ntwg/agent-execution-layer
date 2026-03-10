@@ -44,6 +44,17 @@ Run these before moving a PR out of draft:
 Repo-specific policy lives in:
 
 - `.ael/project-contract.md`
+- `.ael/settings.json` controls the backlog-create/backlog-polish prompt templates
+
+## Backlog Hygiene
+
+When you need to identify missing follow-up work or clean up the existing backlog, use:
+
+- `{{WORKFLOW_STATUS_COMMAND}}`
+- `{{WORKFLOW_REPORT_COMMAND}}`
+- `{{WORKFLOW_AUDIT_COMMAND}}`
+- `{{WORKFLOW_BACKLOG_CREATE_COMMAND}}`
+- `{{WORKFLOW_BACKLOG_POLISH_COMMAND}}`
 
 ## Human Supervision
 

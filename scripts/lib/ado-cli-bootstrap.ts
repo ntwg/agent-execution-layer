@@ -23,6 +23,7 @@ import {
   DEFAULT_PR_DEFAULTS,
   DEFAULT_PROJECT_CONTRACT_FILENAME,
   DEFAULT_REPORT_DEFAULTS,
+  DEFAULT_SETTINGS_FILENAME,
   normalizeAgentKey,
   type AgentDefinition,
   type AgentExecutionConfig,
@@ -358,6 +359,7 @@ interface AdoptionInstallManifest {
     agentGuide?: string;
     projectContract?: string;
     config?: string;
+    settings?: string;
   };
 }
 
@@ -378,6 +380,7 @@ function resolveAdoptionPaths(manifest?: AdoptionInstallManifest): {
   agentGuidePath: string;
   projectContractPath: string;
   configPath: string;
+  settingsPath: string;
   rootInstructionsMode: 'managed' | 'external';
   rootInstructionsPath: string;
   installMode: 'minimal' | 'with-scripts';
@@ -397,6 +400,7 @@ function resolveAdoptionPaths(manifest?: AdoptionInstallManifest): {
       manifest?.files?.projectContract || DEFAULT_PROJECT_CONTRACT_FILENAME,
     ),
     configPath: resolve(process.cwd(), manifest?.files?.config || DEFAULT_CONFIG_FILENAME),
+    settingsPath: resolve(process.cwd(), manifest?.files?.settings || DEFAULT_SETTINGS_FILENAME),
     rootInstructionsMode: manifest?.rootInstructions?.mode === 'external' ? 'external' : 'managed',
     rootInstructionsPath: resolve(process.cwd(), manifest?.rootInstructions?.path || 'AGENTS.md'),
     installMode: manifest?.mode === 'with-scripts' ? 'with-scripts' : 'minimal',
@@ -437,6 +441,11 @@ function buildAdoptionChecks(): DoctorCheck[] {
       ? paths.projectContractPath
       : `missing ${paths.projectContractPath}`,
   });
+  checks.push({
+    label: 'ael settings',
+    ok: existsSync(paths.settingsPath),
+    detail: existsSync(paths.settingsPath) ? paths.settingsPath : `missing ${paths.settingsPath}`,
+  });
 
   const gitignoreRequiredEntries = [
     '*',
@@ -444,6 +453,7 @@ function buildAdoptionChecks(): DoctorCheck[] {
     '!agent-guide.md',
     '!install.json',
     '!project-contract.md',
+    '!settings.json',
   ];
   checks.push({
     label: 'ael local ignore',
@@ -505,6 +515,7 @@ function buildAdoptionNextSteps(checks: DoctorCheck[]): string[] {
     failedLabels.has('ael install manifest') ||
     failedLabels.has('ael agent guide') ||
     failedLabels.has('ael project contract') ||
+    failedLabels.has('ael settings') ||
     failedLabels.has('ael local ignore')
   ) {
     return [`re-run ${preferredWorkflowCommand('install', ' --force')}`];
@@ -1307,6 +1318,8 @@ export function printHelp(): void {
   console.log('Commands:');
   console.log('  status [--json]');
   console.log('  validate-config [--json]');
+  console.log('  backlog-create [--json]');
+  console.log('  backlog-polish [--json]');
   console.log(
     '  install [--agent-key <agent-key>] [--default-branch <branch>] [--entrypoint-file <path>] [--with-scripts|--minimal] [--no-root-agents] [--dry-run] [--force] [--json]',
   );

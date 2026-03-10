@@ -65,6 +65,7 @@ test('install writes downstream repo contract files without mutating package.jso
   assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/agent-guide.md')));
   assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/install.json')));
   assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/project-contract.md')));
+  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/settings.json')));
   assert.deepEqual(summary.nextSteps.slice(-2), ['npx ael init', 'npx ael doctor']);
 
   const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
@@ -91,6 +92,8 @@ test('install writes downstream repo contract files without mutating package.jso
   assert.match(guide, /`npm run build`/);
   assert.match(guide, /`npm test`/);
   assert.match(guide, /`npm run lint`/);
+  assert.match(guide, /npx ael backlog-create/);
+  assert.match(guide, /npx ael backlog-polish/);
 
   const contractPath = join(workspace, '.ael', 'project-contract.md');
   assert.ok(existsSync(contractPath));
@@ -106,6 +109,7 @@ test('install writes downstream repo contract files without mutating package.jso
   assert.match(aelGitignore, /^!agent-guide\.md$/m);
   assert.match(aelGitignore, /^!install\.json$/m);
   assert.match(aelGitignore, /^!project-contract\.md$/m);
+  assert.match(aelGitignore, /^!settings\.json$/m);
 
   const installManifest = JSON.parse(
     readFileSync(join(workspace, '.ael', 'install.json'), 'utf8'),
@@ -113,11 +117,21 @@ test('install writes downstream repo contract files without mutating package.jso
     manifestVersion: number;
     mode: string;
     rootInstructions: { mode: string; path: string };
+    files: { settings: string };
   };
   assert.equal(installManifest.manifestVersion, 1);
   assert.equal(installManifest.mode, 'minimal');
   assert.equal(installManifest.rootInstructions.mode, 'managed');
   assert.equal(installManifest.rootInstructions.path, 'AGENTS.md');
+  assert.equal(installManifest.files.settings, '.ael/settings.json');
+
+  const settingsPath = join(workspace, '.ael', 'settings.json');
+  assert.ok(existsSync(settingsPath));
+  const settings = JSON.parse(readFileSync(settingsPath, 'utf8')) as {
+    promptTemplates: { backlogCreate: string; backlogPolish: string };
+  };
+  assert.match(settings.promptTemplates.backlogCreate, /Identify meaningful gaps/);
+  assert.match(settings.promptTemplates.backlogPolish, /Improve the clarity/);
 
   const statusJson = JSON.parse(runCli(['status', '--json'], workspace)) as {
     nextSteps: string[];
@@ -162,6 +176,8 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   assert.equal(summary.rootInstructionsPath, 'AGENTS.md');
   assert.ok(summary.scripts.added.includes('ael:install'));
   assert.ok(summary.scripts.added.includes('ael:uninstall'));
+  assert.ok(summary.scripts.added.includes('ael:backlog-create'));
+  assert.ok(summary.scripts.added.includes('ael:backlog-polish'));
   assert.ok(summary.scripts.added.includes('ael:init'));
 
   const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
@@ -169,6 +185,8 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   };
   assert.equal(packageJson.scripts['ael:install'], 'ael install --with-scripts');
   assert.equal(packageJson.scripts['ael:uninstall'], 'ael uninstall');
+  assert.equal(packageJson.scripts['ael:backlog-create'], 'ael backlog-create');
+  assert.equal(packageJson.scripts['ael:backlog-polish'], 'ael backlog-polish');
   assert.equal(packageJson.scripts['ael:status'], 'ael status --json');
   assert.equal(packageJson.scripts['ael:doctor'], 'ael doctor --json');
 
@@ -177,6 +195,8 @@ test('install --with-scripts writes downstream package scripts and keeps script-
 
   const guide = readFileSync(join(workspace, '.ael', 'agent-guide.md'), 'utf8');
   assert.match(guide, /npm run ael:next -- --agent <agent-key>/);
+  assert.match(guide, /npm run ael:backlog-create/);
+  assert.match(guide, /npm run ael:backlog-polish/);
 
   const statusJson = JSON.parse(runCli(['status', '--json'], workspace)) as {
     nextSteps: string[];
@@ -257,10 +277,12 @@ test('install --dry-run previews downstream changes without writing files', (t) 
   assert.ok(summary.files.created.some((path) => path.endsWith('/AGENTS.md')));
   assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/agent-guide.md')));
   assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/project-contract.md')));
+  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/settings.json')));
   assert.equal(existsSync(join(workspace, 'AGENTS.md')), false);
   assert.equal(existsSync(join(workspace, '.ael', 'agent-guide.md')), false);
   assert.equal(existsSync(join(workspace, '.ael', 'project-contract.md')), false);
   assert.equal(existsSync(join(workspace, '.ael', 'install.json')), false);
+  assert.equal(existsSync(join(workspace, '.ael', 'settings.json')), false);
 });
 
 test('install --entrypoint-file writes the root discovery stub to a custom file', (t) => {
@@ -439,9 +461,12 @@ test('uninstall removes managed files and exact-match scripts from a downstream 
   assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/.gitignore')));
   assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/install.json')));
   assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/config.local.json')));
+  assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/settings.json')));
   assert.ok(summary.files.updated.some((path) => path.endsWith('/package.json')));
   assert.ok(summary.scripts.removed.includes('ael:install'));
   assert.ok(summary.scripts.removed.includes('ael:uninstall'));
+  assert.ok(summary.scripts.removed.includes('ael:backlog-create'));
+  assert.ok(summary.scripts.removed.includes('ael:backlog-polish'));
   assert.equal(summary.scripts.preserved.length, 0);
 
   assert.equal(existsSync(join(workspace, 'AGENTS.md')), false);

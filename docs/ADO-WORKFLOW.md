@@ -20,6 +20,8 @@ npm run ael:init
 npm run ael:doctor
 npm run ael:smoke
 npm run ael:validate-config
+npm run ael:backlog-create
+npm run ael:backlog-polish
 npm run ael:status
 npm run ael:create -- --title "<task>" --human-summary "<goal>" --agent-context "<technical context>"
 npm run ael:start -- --id <id> --agent codex --assigned-to "<ado-email-or-id>"
@@ -160,6 +162,7 @@ The long-term downstream integration model is package-based:
 - optionally opt into repo-local `ael:*` package scripts with `ael install --with-scripts`
 - optionally point the discovery stub at a custom root file with `ael install --entrypoint-file <path>`
 - optionally remove AEL later with `ael uninstall` or preview cleanup with `ael uninstall --dry-run`
+- customize backlog prompt templates in `.ael/settings.json`
 - keep repo-specific validation and escalation rules in the downstream repo
 
 See [docs/ADOPTING-AEL.md](./ADOPTING-AEL.md), [examples/downstream-minimal](../examples/downstream-minimal), and `templates/downstream/*`.

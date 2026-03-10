@@ -33,6 +33,7 @@ If you want to preview the downstream file changes first, run `npx ael install -
 - Runs preflight and read-only smoke checks with `ael doctor` and `ael smoke`, including branch policy and PR readiness checks
 - Audits Azure DevOps drift and can repair safe issues like formatting, inferred missing PR links, and PR tag sync
 - Produces a quick human-readable status report for active work, blocked items, PRs, and recent completions
+- Renders editable backlog-analysis prompts with `ael backlog-create` and `ael backlog-polish`
 
 ## Current Backend
 
@@ -43,7 +44,7 @@ This repo no longer ships a checked-in active target config. Run `npm run ael:in
 
 The long-term adoption model is package-based: install AEL in the downstream repo and call the `ael` bin entrypoint from that repo. See [docs/ADOPTING-AEL.md](docs/ADOPTING-AEL.md).
 
-The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, and `.ael/project-contract.md`. Pass `--with-scripts` if the downstream repo also wants `package.json` `ael:*` shortcuts, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, or `--dry-run` if you want a preview before writing anything.
+The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, `.ael/project-contract.md`, and `.ael/settings.json`. Pass `--with-scripts` if the downstream repo also wants `package.json` `ael:*` shortcuts, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, or `--dry-run` if you want a preview before writing anything.
 
 If you want a copyable reference layout, start with [examples/downstream-minimal](examples/downstream-minimal).
 If you want the script-driven variant, use [examples/downstream-with-scripts](examples/downstream-with-scripts).
@@ -58,6 +59,7 @@ The most common first fixes are:
 - confirm `az login` or `AEL_ADO_PAT` is set before `ael init`
 - install the Azure DevOps Azure CLI extension if `doctor` reports missing `az devops`
 - use `ael install --entrypoint-file <path>` or `--no-root-agents` when the repo already owns its root instructions
+- edit `.ael/settings.json` if you want to customize the backlog-analysis prompts
 - use `ael uninstall --dry-run` before cleanup if you want to see exactly what AEL would remove
 
 This repo also exposes `npm run ael:*` scripts for local development. The older `npm run ado:*` aliases remain only for compatibility.
@@ -79,6 +81,8 @@ npm test
 npm run ael:init
 npm run ael:doctor
 npm run ael:validate-config
+npm run ael:backlog-create
+npm run ael:backlog-polish
 npm run ael:status
 npm run ael:help
 ```
@@ -102,6 +106,8 @@ npm run ael:doctor
 npm run ael:smoke
 npm run ael:validate-config
 npm run ael:status
+npm run ael:backlog-create
+npm run ael:backlog-polish
 npm run ael:enable
 npm run ael:disable
 npm run ael:create -- --title "<task>" --human-summary "<goal>" --agent-context "<technical context>"
@@ -132,10 +138,12 @@ npm run ael:report
 - `npm run ael:init` bootstraps a config from Azure DevOps and git remote context, auto-detects repo ID plus default area/iteration paths, and can run fully non-interactively with flags
 - `npm run ael:doctor` checks git context, Azure CLI or PAT auth, config validity, project access, repository access, configured identities, branch policies, and default branch reachability
 - `npm run ael:doctor -- --adoption` checks that a downstream repo's `.ael` install contract is wired correctly
+- `npm run ael:backlog-create` renders the editable prompt for finding gaps and creating new backlog items
+- `npm run ael:backlog-polish` renders the editable prompt for refining existing backlog items
 - `npx ael install --dry-run` previews downstream adoption changes without mutating the repo
 - `npx ael uninstall` removes AEL-managed downstream files and exact-match `ael:*` script shims
 - `npm run ael:smoke` runs the doctor flow plus read-only work item queries, PR list queries, and active PR merge-readiness inspection
-- `status`, `validate-config`, `init`, `doctor`, `smoke`, `list`, `next`, `create`, `claim`, `branch`, `start`, `commit`, `pr`, `done`, `retag`, `audit`, `report`, `enable`, and `disable` all support `--json` for agent-safe parsing
+- `status`, `validate-config`, `backlog-create`, `backlog-polish`, `init`, `doctor`, `smoke`, `list`, `next`, `create`, `claim`, `branch`, `start`, `commit`, `pr`, `done`, `retag`, `audit`, `report`, `enable`, and `disable` all support `--json` for agent-safe parsing
 
 ## Config Shape
 
@@ -160,6 +168,7 @@ npm run ael:report
 - `.ael/config.local.json`: generated local config written by `ael:init`
 - `.ael/agent-guide.md`: downstream agent workflow instructions
 - `.ael/project-contract.md`: downstream repo-specific validation and escalation policy
+- `.ael/settings.json`: editable downstream prompt settings for backlog-create/backlog-polish
 - `agent-execution.config.example.json`: reusable template
 - `docs/ADOPTING-AEL.md`: downstream adoption guide
 - `docs/FIRST-PUSH-CHECKLIST.md`: release and publish-readiness checklist
