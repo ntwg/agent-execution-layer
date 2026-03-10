@@ -44,7 +44,7 @@ This repo no longer ships a checked-in active target config. Run `npm run ael:in
 
 The long-term adoption model is package-based: install AEL in the downstream repo and call the `ael` bin entrypoint from that repo. See [docs/ADOPTING-AEL.md](docs/ADOPTING-AEL.md).
 
-The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, `.ael/project-contract.md`, and `.ael/settings.json`. Pass `--with-scripts` if the downstream repo also wants `package.json` `ael:*` shortcuts, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, or `--dry-run` if you want a preview before writing anything.
+The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, `.ael/project-contract.md`, and `.ael/settings.json`. Pass `--with-scripts` if the downstream repo also wants the full `package.json` `ael:*` workflow shortcut set, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, or `--dry-run` if you want a preview before writing anything.
 
 If you want a copyable reference layout, start with [examples/downstream-minimal](examples/downstream-minimal).
 If you want the script-driven variant, use [examples/downstream-with-scripts](examples/downstream-with-scripts).

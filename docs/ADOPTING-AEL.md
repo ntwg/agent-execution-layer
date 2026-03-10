@@ -139,7 +139,7 @@ Optional standard mode:
 
 - `ael install --with-scripts` also adds repo-local `ael:*` package scripts
 - `ael install --dry-run` previews the exact files and scripts AEL would touch
-- script mode also exposes `ael:backlog-create` and `ael:backlog-polish`
+- script mode exposes the full repo-local `ael:*` workflow shortcut set, including `ael:backlog-create`, `ael:backlog-polish`, `ael:claim`, `ael:prioritize`, `ael:link`, `ael:branch`, and `ael:retag`
 
 Optional custom entrypoint mode:
 

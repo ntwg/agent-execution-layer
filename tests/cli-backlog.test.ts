@@ -155,3 +155,95 @@ test('backlog-polish falls back to bundled defaults when settings are missing', 
   assert.match(result.prompt, /Improve the clarity, sequencing, metadata, and execution-readiness/);
   assert.match(result.prompt, /fallback-backlog-repo/);
 });
+
+test('backlog prompts prefer repo-local scripts when script mode shims exist', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  writeFileSync(
+    join(workspace, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'script-backed-backlog-repo',
+        private: true,
+        scripts: {
+          'ael:status': 'ael status --json',
+          'ael:report': 'ael report --json',
+          'ael:audit': 'ael audit --json',
+          'ael:list': 'ael list --json',
+          'ael:create': 'ael create',
+          'ael:prioritize': 'ael prioritize',
+          'ael:retag': 'ael retag',
+          'ael:link': 'ael link',
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(
+    configPath,
+    `${JSON.stringify(
+      {
+        configVersion: 3,
+        enabled: true,
+        organizationUrl: 'https://dev.azure.com/example-org',
+        project: 'Script Backed Project',
+        repositoryId: '22222222-2222-2222-2222-222222222222',
+        defaultBranch: 'main',
+        defaultAgent: 'codex',
+        defaultWorkItemType: 'Task',
+        defaultAreaPath: 'Script Backed Project',
+        defaultIterationPath: 'Script Backed Project',
+        workItemFieldDefaults: {
+          create: {},
+          done: {},
+        },
+        sharedTags: ['agent-managed'],
+        agents: [
+          {
+            key: 'codex',
+            tag: 'agent:codex',
+            branchPrefix: 'codex',
+            defaultAssignee: '',
+          },
+        ],
+        stateMap: {
+          new: 'New',
+          active: 'Active',
+          done: 'Closed',
+        },
+        prDefaults: {
+          reviewerMode: 'off',
+          reviewerRequired: false,
+          syncWorkItemTags: true,
+          syncTagMode: 'non-agent',
+        },
+        reportDefaults: {
+          staleDays: 7,
+          recentDays: 7,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const result = JSON.parse(runCli(['backlog-create', '--json'], workspace)) as {
+    ok: boolean;
+    prompt: string;
+  };
+
+  assert.equal(result.ok, true);
+  assert.match(result.prompt, /npm run ael:prioritize -- --id <id> --priority <1-4>/);
+  assert.match(result.prompt, /npm run ael:retag -- --id <id> --tags "<tag1;tag2>"/);
+  assert.match(
+    result.prompt,
+    /npm run ael:link -- --id <id> --depends-on "<id;id>" --related "<id;id>"/,
+  );
+});

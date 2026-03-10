@@ -179,6 +179,11 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   assert.ok(summary.scripts.added.includes('ael:backlog-create'));
   assert.ok(summary.scripts.added.includes('ael:backlog-polish'));
   assert.ok(summary.scripts.added.includes('ael:init'));
+  assert.ok(summary.scripts.added.includes('ael:claim'));
+  assert.ok(summary.scripts.added.includes('ael:prioritize'));
+  assert.ok(summary.scripts.added.includes('ael:link'));
+  assert.ok(summary.scripts.added.includes('ael:branch'));
+  assert.ok(summary.scripts.added.includes('ael:retag'));
 
   const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>;
@@ -189,6 +194,11 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   assert.equal(packageJson.scripts['ael:backlog-polish'], 'ael backlog-polish');
   assert.equal(packageJson.scripts['ael:status'], 'ael status --json');
   assert.equal(packageJson.scripts['ael:doctor'], 'ael doctor --json');
+  assert.equal(packageJson.scripts['ael:claim'], 'ael claim');
+  assert.equal(packageJson.scripts['ael:prioritize'], 'ael prioritize');
+  assert.equal(packageJson.scripts['ael:link'], 'ael link');
+  assert.equal(packageJson.scripts['ael:branch'], 'ael branch');
+  assert.equal(packageJson.scripts['ael:retag'], 'ael retag');
 
   const agents = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');
   assert.match(agents, /npm run ael:status/);
