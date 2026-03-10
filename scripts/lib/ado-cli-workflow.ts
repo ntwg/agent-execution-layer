@@ -66,18 +66,30 @@ function parseWorkItemIdFromRelationUrl(url: string | undefined): number | undef
   return Number.isFinite(id) ? id : undefined;
 }
 
-function parsePullRequestIdFromArtifactUrl(url: string | undefined): number | undefined {
+export function parsePullRequestIdFromArtifactUrl(url: string | undefined): number | undefined {
   if (!url) return undefined;
-  const prArtifact = url.match(/PullRequestId\/[^/]+\/[^/]+\/(\d+)/i);
-  if (prArtifact) {
-    const id = Number.parseInt(prArtifact[1], 10);
-    return Number.isFinite(id) ? id : undefined;
+
+  const candidates = [url];
+  try {
+    candidates.unshift(decodeURIComponent(url));
+  } catch {
+    // Ignore malformed encodings and fall back to the raw artifact URL.
   }
-  const prWeb = url.match(/pullrequest\/(\d+)/i);
-  if (prWeb) {
-    const id = Number.parseInt(prWeb[1], 10);
-    return Number.isFinite(id) ? id : undefined;
+
+  for (const candidate of candidates) {
+    const prArtifact = candidate.match(/PullRequestId\/[^/]+\/[^/]+\/(\d+)/i);
+    if (prArtifact) {
+      const id = Number.parseInt(prArtifact[1], 10);
+      return Number.isFinite(id) ? id : undefined;
+    }
+
+    const prWeb = candidate.match(/pullrequest\/(\d+)/i);
+    if (prWeb) {
+      const id = Number.parseInt(prWeb[1], 10);
+      return Number.isFinite(id) ? id : undefined;
+    }
   }
+
   return undefined;
 }
 
