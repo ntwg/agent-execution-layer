@@ -10,7 +10,7 @@ This project keeps a lightweight changelog.
 
 ## Unreleased
 
-- No unreleased changes yet.
+- Fixed the `npm test` script to use a shell-safe test file glob so Node 20 CI runs execute the suite instead of treating `**` literally.
 
 ## 0.1.0 - 2026-03-10
 
