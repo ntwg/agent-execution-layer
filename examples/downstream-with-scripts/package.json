@@ -1,4 +1,6 @@
 {
+  "name": "example-downstream-with-scripts",
+  "private": true,
   "scripts": {
     "ael:install": "ael install --with-scripts",
     "ael:uninstall": "ael uninstall",

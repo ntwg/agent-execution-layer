@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 export type ReviewerMode = 'off' | 'assigned';
 export type PullRequestTagMode = 'non-agent' | 'all';
@@ -64,8 +64,14 @@ export interface InspectConfigOptions {
   legacyMigrationWarning?: string;
 }
 
-export const DEFAULT_CONFIG_FILENAME = 'agent-execution.config.local.json';
+export const AEL_DIRECTORY = '.ael';
+export const DEFAULT_CONFIG_FILENAME = `${AEL_DIRECTORY}/config.local.json`;
+export const ROOT_LOCAL_CONFIG_FILENAME = 'agent-execution.config.local.json';
 export const LEGACY_CONFIG_FILENAME = 'agent-execution.config.json';
+export const DEFAULT_AGENT_GUIDE_FILENAME = `${AEL_DIRECTORY}/agent-guide.md`;
+export const DEFAULT_PROJECT_CONTRACT_FILENAME = `${AEL_DIRECTORY}/project-contract.md`;
+export const DEFAULT_AEL_GITIGNORE_FILENAME = `${AEL_DIRECTORY}/.gitignore`;
+export const DEFAULT_INSTALL_MANIFEST_FILENAME = `${AEL_DIRECTORY}/install.json`;
 
 export const DEFAULT_PR_DEFAULTS = {
   reviewerMode: 'off' as ReviewerMode,
@@ -558,6 +564,17 @@ export function discoverConfigPath(
     };
   }
 
+  const rootLocalPath = resolve(cwd, ROOT_LOCAL_CONFIG_FILENAME);
+  if (fileExists(rootLocalPath)) {
+    return {
+      path: rootLocalPath,
+      preferredPath,
+      source: 'legacy',
+      preferredSource: 'local',
+      usedLegacyFallback: true,
+    };
+  }
+
   const legacyPath = resolve(cwd, LEGACY_CONFIG_FILENAME);
   if (fileExists(legacyPath)) {
     return {
@@ -700,5 +717,6 @@ export function loadConfigFromPath(
 }
 
 export function saveConfigToPath(configPath: string, config: AgentExecutionConfig): void {
+  mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }

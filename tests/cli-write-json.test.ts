@@ -517,8 +517,10 @@ if (method === 'GET' && parsed.pathname.includes('/_apis/wit/workitems')) {
 }
 
 function writeConfig(workspace: string): void {
+  const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
+  mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(
-    join(workspace, DEFAULT_CONFIG_FILENAME),
+    configPath,
     `${JSON.stringify(
       {
         configVersion: DEFAULT_CONFIG_VERSION,

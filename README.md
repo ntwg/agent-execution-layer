@@ -2,11 +2,23 @@
 
 A standalone Azure DevOps workflow engine for multi-agent software delivery.
 
-This repo extracts the Azure DevOps execution system that was originally built inside `semantic-layer` and makes it reusable across projects. It manages work-item intake, agent claiming, linked branches, `AB#<id>` commit discipline, linked PR creation, closeout summaries, drift audits, and human-readable status reporting.
-
-The source implementation remains in `semantic-layer`. This repo is an extracted copy for reuse, not a cutover.
+This repo provides a reusable Azure DevOps execution layer for agent-driven delivery across projects. It manages work-item intake, agent claiming, linked branches, `AB#<id>` commit discipline, linked PR creation, closeout summaries, drift audits, and human-readable status reporting.
 
 If you are starting work here without prior conversation context, read [docs/PROJECT-CONTEXT.md](docs/PROJECT-CONTEXT.md) after this file.
+
+## Quickstart
+
+Until npm publishing is enabled, install AEL from GitHub:
+
+```bash
+npm install -D github:ntwg/agent-execution-layer
+npx ael install
+npx ael doctor --adoption
+npx ael init
+npx ael status
+```
+
+If you want to preview the downstream file changes first, run `npx ael install --dry-run`.
 
 ## What It Does
 
@@ -25,13 +37,28 @@ If you are starting work here without prior conversation context, read [docs/PRO
 ## Current Backend
 
 - Azure DevOps only
-- Configured by generated local config in `agent-execution.config.local.json`
+- Configured by generated local config in `.ael/config.local.json`
 
-This repo no longer ships a checked-in active target config. Run `npm run ael:init` to generate `agent-execution.config.local.json` from Azure login and repo context. The legacy filename `agent-execution.config.json` is still accepted for older consumers.
+This repo no longer ships a checked-in active target config. Run `npm run ael:init` to generate `.ael/config.local.json` from Azure login and repo context. The older root filename `agent-execution.config.local.json` and the legacy filename `agent-execution.config.json` are still accepted for compatibility.
 
-The long-term adoption model is package-based: install AEL in the downstream repo and call the `ael` bin entrypoint from that repo's scripts. See [docs/ADOPTING-AEL.md](docs/ADOPTING-AEL.md).
+The long-term adoption model is package-based: install AEL in the downstream repo and call the `ael` bin entrypoint from that repo. See [docs/ADOPTING-AEL.md](docs/ADOPTING-AEL.md).
 
-The downstream bootstrap command is `ael install`, which writes the recommended package scripts, `AGENTS.md` workflow block, project contract template, and `.gitignore` entry.
+The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, and `.ael/project-contract.md`. Pass `--with-scripts` if the downstream repo also wants `package.json` `ael:*` shortcuts, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, or `--dry-run` if you want a preview before writing anything.
+
+If you want a copyable reference layout, start with [examples/downstream-minimal](examples/downstream-minimal).
+If you want the script-driven variant, use [examples/downstream-with-scripts](examples/downstream-with-scripts).
+
+## Troubleshooting
+
+Common adoption failures are documented in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+The most common first fixes are:
+
+- run `npx ael doctor --adoption` after `ael install`
+- confirm `az login` or `AEL_ADO_PAT` is set before `ael init`
+- install the Azure DevOps Azure CLI extension if `doctor` reports missing `az devops`
+- use `ael install --entrypoint-file <path>` or `--no-root-agents` when the repo already owns its root instructions
+- use `ael uninstall --dry-run` before cleanup if you want to see exactly what AEL would remove
 
 This repo also exposes `npm run ael:*` scripts for local development. The older `npm run ado:*` aliases remain only for compatibility.
 
@@ -104,6 +131,9 @@ npm run ael:report
 
 - `npm run ael:init` bootstraps a config from Azure DevOps and git remote context, auto-detects repo ID plus default area/iteration paths, and can run fully non-interactively with flags
 - `npm run ael:doctor` checks git context, Azure CLI or PAT auth, config validity, project access, repository access, configured identities, branch policies, and default branch reachability
+- `npm run ael:doctor -- --adoption` checks that a downstream repo's `.ael` install contract is wired correctly
+- `npx ael install --dry-run` previews downstream adoption changes without mutating the repo
+- `npx ael uninstall` removes AEL-managed downstream files and exact-match `ael:*` script shims
 - `npm run ael:smoke` runs the doctor flow plus read-only work item queries, PR list queries, and active PR merge-readiness inspection
 - `status`, `validate-config`, `init`, `doctor`, `smoke`, `list`, `next`, `create`, `claim`, `branch`, `start`, `commit`, `pr`, `done`, `retag`, `audit`, `report`, `enable`, and `disable` all support `--json` for agent-safe parsing
 
@@ -125,12 +155,20 @@ npm run ael:report
 - `scripts/lib/ado-cli-install.ts`: downstream install/bootstrap flow
 - `scripts/lib/ado-cli-types.ts`: internal workflow types
 - `bin/ael.js`: package entrypoint for downstream install/use
-- `agent-execution.config.local.json`: generated local config written by `ael:init`
+- `.ael/.gitignore`: hides local AEL state while keeping committed guidance visible
+- `.ael/install.json`: install manifest used by `doctor --adoption`
+- `.ael/config.local.json`: generated local config written by `ael:init`
+- `.ael/agent-guide.md`: downstream agent workflow instructions
+- `.ael/project-contract.md`: downstream repo-specific validation and escalation policy
 - `agent-execution.config.example.json`: reusable template
 - `docs/ADOPTING-AEL.md`: downstream adoption guide
 - `docs/FIRST-PUSH-CHECKLIST.md`: release and publish-readiness checklist
 - `docs/RELEASE-POLICY.md`: lightweight release/versioning policy
+- `docs/UPSTREAM-CONTRIBUTIONS.md`: policy for downstream agents reporting or contributing upstream fixes
+- `docs/TROUBLESHOOTING.md`: common install, init, and cleanup failure cases
 - `CHANGELOG.md`: rolling user-visible change log
+- `examples/downstream-minimal`: copyable low-noise downstream repo layout
+- `examples/downstream-with-scripts`: copyable downstream layout with `package.json` script shims
 - `templates/downstream/*`: downstream package/agent/project-contract templates
 - `.github/*`: public GitHub issue, PR, and ownership templates
 - `docs/PROJECT-CONTEXT.md`: current project context and next hardening priorities

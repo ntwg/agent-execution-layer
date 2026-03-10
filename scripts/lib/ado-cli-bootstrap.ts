@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import { parseAzureDevOpsRemote } from './ado-bootstrap.js';
@@ -13,9 +14,14 @@ import type {
   PullRequestRecord,
 } from './ado-cli-types.js';
 import {
+  DEFAULT_AEL_GITIGNORE_FILENAME,
   DEFAULT_AGENT_DEFINITIONS,
+  DEFAULT_AGENT_GUIDE_FILENAME,
+  DEFAULT_CONFIG_FILENAME,
   DEFAULT_CONFIG_VERSION,
+  DEFAULT_INSTALL_MANIFEST_FILENAME,
   DEFAULT_PR_DEFAULTS,
+  DEFAULT_PROJECT_CONTRACT_FILENAME,
   DEFAULT_REPORT_DEFAULTS,
   normalizeAgentKey,
   type AgentDefinition,
@@ -45,6 +51,7 @@ import {
   preferredWorkflowCommand,
   printCheck,
   printJson,
+  readWorkspacePackageJson,
   resolveRepositoryId,
   runCommand,
   saveConfig,
@@ -337,6 +344,187 @@ function summarizeActivePullRequestReadiness(
       `${pendingBlockingCount} pending blocking ${pluralize(pendingBlockingCount, 'policy')}, ` +
       `${mergeIssueCount} merge ${pluralize(mergeIssueCount, 'issue')}`,
   };
+}
+
+interface AdoptionInstallManifest {
+  manifestVersion?: number;
+  mode?: 'minimal' | 'with-scripts';
+  rootInstructions?: {
+    mode?: 'managed' | 'external';
+    path?: string;
+  };
+  files?: {
+    gitignore?: string;
+    agentGuide?: string;
+    projectContract?: string;
+    config?: string;
+  };
+}
+
+function readAdoptionInstallManifest(): AdoptionInstallManifest | undefined {
+  const manifestPath = resolve(process.cwd(), DEFAULT_INSTALL_MANIFEST_FILENAME);
+  if (!existsSync(manifestPath)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown;
+    return isRecord(parsed) ? (parsed as AdoptionInstallManifest) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveAdoptionPaths(manifest?: AdoptionInstallManifest): {
+  manifestPath: string;
+  gitignorePath: string;
+  agentGuidePath: string;
+  projectContractPath: string;
+  configPath: string;
+  rootInstructionsMode: 'managed' | 'external';
+  rootInstructionsPath: string;
+  installMode: 'minimal' | 'with-scripts';
+} {
+  return {
+    manifestPath: resolve(process.cwd(), DEFAULT_INSTALL_MANIFEST_FILENAME),
+    gitignorePath: resolve(
+      process.cwd(),
+      manifest?.files?.gitignore || DEFAULT_AEL_GITIGNORE_FILENAME,
+    ),
+    agentGuidePath: resolve(
+      process.cwd(),
+      manifest?.files?.agentGuide || DEFAULT_AGENT_GUIDE_FILENAME,
+    ),
+    projectContractPath: resolve(
+      process.cwd(),
+      manifest?.files?.projectContract || DEFAULT_PROJECT_CONTRACT_FILENAME,
+    ),
+    configPath: resolve(process.cwd(), manifest?.files?.config || DEFAULT_CONFIG_FILENAME),
+    rootInstructionsMode: manifest?.rootInstructions?.mode === 'external' ? 'external' : 'managed',
+    rootInstructionsPath: resolve(process.cwd(), manifest?.rootInstructions?.path || 'AGENTS.md'),
+    installMode: manifest?.mode === 'with-scripts' ? 'with-scripts' : 'minimal',
+  };
+}
+
+function fileContains(path: string, snippets: string[]): boolean {
+  if (!existsSync(path)) return false;
+  const content = readFileSync(path, 'utf8');
+  return snippets.every((snippet) => content.includes(snippet));
+}
+
+function buildAdoptionChecks(): DoctorCheck[] {
+  const manifest = readAdoptionInstallManifest();
+  const paths = resolveAdoptionPaths(manifest);
+  const checks: DoctorCheck[] = [];
+
+  checks.push({
+    label: 'ael install manifest',
+    ok: Boolean(manifest && manifest.manifestVersion === 1),
+    detail: manifest
+      ? manifest.manifestVersion === 1
+        ? paths.manifestPath
+        : `unsupported manifest version ${String(manifest.manifestVersion ?? '(missing)')}`
+      : `missing ${paths.manifestPath}`,
+  });
+  checks.push({
+    label: 'ael agent guide',
+    ok: existsSync(paths.agentGuidePath),
+    detail: existsSync(paths.agentGuidePath)
+      ? paths.agentGuidePath
+      : `missing ${paths.agentGuidePath}`,
+  });
+  checks.push({
+    label: 'ael project contract',
+    ok: existsSync(paths.projectContractPath),
+    detail: existsSync(paths.projectContractPath)
+      ? paths.projectContractPath
+      : `missing ${paths.projectContractPath}`,
+  });
+
+  const gitignoreRequiredEntries = [
+    '*',
+    '!.gitignore',
+    '!agent-guide.md',
+    '!install.json',
+    '!project-contract.md',
+  ];
+  checks.push({
+    label: 'ael local ignore',
+    ok:
+      existsSync(paths.gitignorePath) &&
+      fileContains(paths.gitignorePath, gitignoreRequiredEntries),
+    detail:
+      existsSync(paths.gitignorePath) && fileContains(paths.gitignorePath, gitignoreRequiredEntries)
+        ? paths.gitignorePath
+        : `expected ${paths.gitignorePath} to ignore local state and keep tracked AEL docs visible`,
+  });
+
+  const rootEntrySnippets = [
+    paths.agentGuidePath
+      .replaceAll('\\', '/')
+      .replace(`${process.cwd().replaceAll('\\', '/')}/`, ''),
+    paths.projectContractPath
+      .replaceAll('\\', '/')
+      .replace(`${process.cwd().replaceAll('\\', '/')}/`, ''),
+  ];
+  const rootEntryExists = existsSync(paths.rootInstructionsPath);
+  const rootEntryWired =
+    rootEntryExists && fileContains(paths.rootInstructionsPath, rootEntrySnippets);
+  checks.push({
+    label:
+      paths.rootInstructionsMode === 'managed' ? 'ael root entrypoint' : 'ael external entrypoint',
+    ok: rootEntryWired,
+    detail: rootEntryWired
+      ? paths.rootInstructionsPath
+      : `expected ${paths.rootInstructionsPath} to reference ${rootEntrySnippets.join(' and ')}`,
+  });
+
+  const packageJsonScripts = ['ael:status', 'ael:init', 'ael:doctor'];
+  const packageJson = readWorkspacePackageJson();
+  const packageScripts = packageJson?.scripts;
+  const hasPackageScripts =
+    isRecord(packageScripts) &&
+    packageJsonScripts.every((name) => typeof packageScripts[name] === 'string');
+  checks.push({
+    label: 'ael package scripts',
+    ok: paths.installMode === 'minimal' ? true : hasPackageScripts,
+    detail:
+      paths.installMode === 'minimal'
+        ? 'optional in minimal mode'
+        : hasPackageScripts
+          ? 'expected scripts present'
+          : 'missing expected ael:* package scripts',
+  });
+
+  return checks;
+}
+
+function buildAdoptionNextSteps(checks: DoctorCheck[]): string[] {
+  const failedLabels = new Set(checks.filter((check) => !check.ok).map((check) => check.label));
+  if (failedLabels.size === 0) {
+    return [preferredWorkflowCommand('init'), preferredWorkflowCommand('doctor')];
+  }
+  if (
+    failedLabels.has('ael install manifest') ||
+    failedLabels.has('ael agent guide') ||
+    failedLabels.has('ael project contract') ||
+    failedLabels.has('ael local ignore')
+  ) {
+    return [`re-run ${preferredWorkflowCommand('install', ' --force')}`];
+  }
+  if (failedLabels.has('ael root entrypoint') || failedLabels.has('ael external entrypoint')) {
+    const manifest = readAdoptionInstallManifest();
+    const paths = resolveAdoptionPaths(manifest);
+    if (paths.rootInstructionsMode === 'external') {
+      return [`update ${paths.rootInstructionsPath} to point at ${paths.agentGuidePath}`];
+    }
+    return [
+      `re-run ${preferredWorkflowCommand('install', ` --force --entrypoint-file ${manifest?.rootInstructions?.path || 'AGENTS.md'}`)}`,
+    ];
+  }
+  if (failedLabels.has('ael package scripts')) {
+    return [`re-run ${preferredWorkflowCommand('install', ' --with-scripts --force')}`];
+  }
+  return [
+    `fix the failed AEL adoption checks above, then re-run ${preferredWorkflowCommand('doctor', ' --adoption')}`,
+  ];
 }
 
 export function buildStatusNextSteps(inspection: ConfigInspectionResult): string[] {
@@ -798,6 +986,39 @@ export async function commandInit(args: string[]): Promise<void> {
 
 export function commandDoctor(args: string[]): void {
   const smoke = hasFlag(args, '--smoke');
+  const adoption = hasFlag(args, '--adoption');
+  if (smoke && adoption) {
+    fail('doctor accepts either --smoke or --adoption, not both.');
+  }
+  if (adoption) {
+    const checks = buildAdoptionChecks();
+    const failed = checks.filter((check) => !check.ok);
+    if (wantsJson(args)) {
+      printJson({
+        ok: failed.length === 0,
+        mode: 'adoption',
+        checks,
+        nextSteps: buildAdoptionNextSteps(checks),
+      });
+      if (failed.length > 0) {
+        process.exit(1);
+      }
+      return;
+    }
+
+    console.log('=== AEL ADOPTION DOCTOR ===');
+    for (const check of checks) {
+      printCheck(check.label, check.ok, check.detail);
+    }
+    for (const nextStep of buildAdoptionNextSteps(checks)) {
+      console.log(`Next: ${nextStep}`);
+    }
+    if (failed.length > 0) {
+      process.exit(1);
+    }
+    return;
+  }
+
   const checks: DoctorCheck[] = [];
   const patAuth = getConfiguredPat();
   const authMode = patAuth ? 'pat' : 'azure-cli';
@@ -1086,11 +1307,14 @@ export function printHelp(): void {
   console.log('Commands:');
   console.log('  status [--json]');
   console.log('  validate-config [--json]');
-  console.log('  install [--agent-key <agent-key>] [--default-branch <branch>] [--force] [--json]');
+  console.log(
+    '  install [--agent-key <agent-key>] [--default-branch <branch>] [--entrypoint-file <path>] [--with-scripts|--minimal] [--no-root-agents] [--dry-run] [--force] [--json]',
+  );
+  console.log('  uninstall [--dry-run] [--json]');
   console.log(
     '  init [--organization-url <url>] [--project <name>] [--repository <name>] [--repository-id <id>] [--default-branch <branch>] [--area-path "<path>"] [--iteration-path "<path>"] [--agents "codex;claude"] [--default-agent <agent-key>] [--force] [--json]',
   );
-  console.log('  doctor [--smoke] [--json]');
+  console.log('  doctor [--smoke|--adoption] [--json]');
   console.log('  smoke [--json]');
   console.log('  enable [--json]');
   console.log('  disable [--json]');
@@ -1142,6 +1366,6 @@ export function printHelp(): void {
   );
   console.log('');
   console.log(
-    'Tag aliases auto-normalized: benchmarking->benchmark, ci->ci-policy, coverage->semantic-coverage, tokens->token-efficiency',
+    'Tag aliases auto-normalized: benchmarking->benchmark, ci->ci-policy, coverage->coverage-policy, tokens->token-efficiency',
   );
 }

@@ -6,7 +6,7 @@ import {
   printHelp,
   printStatus,
 } from './lib/ado-cli-bootstrap.js';
-import { commandInstall } from './lib/ado-cli-install.js';
+import { commandInstall, commandUninstall } from './lib/ado-cli-install.js';
 import {
   commandAudit,
   commandList,
@@ -43,6 +43,9 @@ async function main(): Promise<void> {
       return;
     case 'install':
       commandInstall(args);
+      return;
+    case 'uninstall':
+      commandUninstall(args);
       return;
     case 'init':
       await commandInit(args);

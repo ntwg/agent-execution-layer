@@ -1,3 +1,4 @@
+<!-- AEL WORKFLOW START -->
 # AEL Entry
 
 This repo uses the Agent Execution Layer (`ael`) as its workflow authority.
@@ -7,7 +8,7 @@ This repo uses the Agent Execution Layer (`ael`) as its workflow authority.
 Before taking any action, run:
 
 ```bash
-{{WORKFLOW_STATUS_COMMAND}}
+npx ael status
 ```
 
 Then read:
@@ -18,6 +19,7 @@ Then read:
 If config is missing, run:
 
 ```bash
-{{WORKFLOW_INIT_COMMAND}}
-{{WORKFLOW_DOCTOR_COMMAND}}
+npx ael init
+npx ael doctor
 ```
+<!-- AEL WORKFLOW END -->

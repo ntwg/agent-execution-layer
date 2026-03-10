@@ -25,7 +25,7 @@ export const AZURE_DEVOPS_RESOURCE = '499b84ac-1321-427f-aa17-267ca6975798';
 export const TAG_ALIAS_MAP: Record<string, string> = {
   benchmarking: 'benchmark',
   ci: 'ci-policy',
-  coverage: 'semantic-coverage',
+  coverage: 'coverage-policy',
   tokens: 'token-efficiency',
 };
 
@@ -74,6 +74,20 @@ export function formatScriptCommand(
   return scriptName === 'test' ? 'npm test' : `npm run ${scriptName}`;
 }
 
+export function formatAelExecCommand(
+  command: string,
+  suffix = '',
+  runner = detectPackageManagerCommand(),
+): string {
+  if (runner === 'yarn') {
+    return `yarn ael ${command}${suffix}`;
+  }
+  if (runner === 'pnpm') {
+    return `pnpm exec ael ${command}${suffix}`;
+  }
+  return `npx ael ${command}${suffix}`;
+}
+
 export function readWorkspacePackageJson(cwd = process.cwd()): Record<string, unknown> | undefined {
   const packageJsonPath = resolve(cwd, 'package.json');
   if (!existsSync(packageJsonPath)) return undefined;
@@ -99,6 +113,9 @@ export function preferredWorkflowCommand(
     if (typeof scripts[`ado:${command}`] === 'string') {
       return `${formatScriptCommand(`ado:${command}`, runner)}${suffix}`;
     }
+  }
+  if (manifest) {
+    return formatAelExecCommand(command, suffix, runner);
   }
   return `ael ${command}${suffix}`;
 }

@@ -25,6 +25,7 @@
     "bin",
     "dist",
     "docs",
+    "examples",
     "templates",
     "README.md",
     "AGENTS.md",
@@ -34,7 +35,8 @@
     "agent-execution.config.example.json"
   ],
   "scripts": {
-    "build": "tsc",
+    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run clean && tsc",
     "lint": "biome lint .",
     "format": "biome format . --write",
     "format:check": "biome format .",

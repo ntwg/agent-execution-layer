@@ -2,8 +2,6 @@
 
 Use this repo as the reusable execution layer for Azure DevOps-backed agent delivery.
 
-The original `semantic-layer` implementation remains intact. This extracted repo exists so the workflow engine can be reused elsewhere.
-
 ## Flow
 
 1. Create a neutral work item
@@ -141,9 +139,9 @@ For agent-safe parsing, these commands support `--json`:
 
 ## Config Override
 
-By default the CLI reads `agent-execution.config.local.json` from the repo root.
+By default the CLI reads `.ael/config.local.json`.
 
-If that file is missing, the legacy filename `agent-execution.config.json` is still accepted for compatibility.
+If that file is missing, the older root filename `agent-execution.config.local.json` and the legacy filename `agent-execution.config.json` are still accepted for compatibility.
 
 To use a different target without editing the generated local file:
 
@@ -157,9 +155,13 @@ The long-term downstream integration model is package-based:
 
 - install this repo as a dependency
 - run `ael install` in the downstream repo root
-- use the `ael` bin entrypoint from downstream package scripts
+- use `npx ael ...` or the equivalent package-manager exec command by default
+- optionally preview downstream changes with `ael install --dry-run`
+- optionally opt into repo-local `ael:*` package scripts with `ael install --with-scripts`
+- optionally point the discovery stub at a custom root file with `ael install --entrypoint-file <path>`
+- optionally remove AEL later with `ael uninstall` or preview cleanup with `ael uninstall --dry-run`
 - keep repo-specific validation and escalation rules in the downstream repo
 
-See [docs/ADOPTING-AEL.md](./ADOPTING-AEL.md) and `templates/downstream/*`.
+See [docs/ADOPTING-AEL.md](./ADOPTING-AEL.md), [examples/downstream-minimal](../examples/downstream-minimal), and `templates/downstream/*`.
 
 Repo-local `npm run ado:*` aliases still exist for compatibility, but `npm run ael:*` is the primary surface going forward.

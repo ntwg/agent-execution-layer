@@ -28,6 +28,7 @@ Use this before the first public push or package publish.
    - run `ael install`
    - run `ael init`
    - run `ael doctor`
+   - run `ael uninstall` if you want to verify reversible cleanup
 5. Update `CHANGELOG.md` before the first tagged release.
 
 ## Already Completed
@@ -37,6 +38,7 @@ Use this before the first public push or package publish.
 - Legacy `npm run ado:*` aliases remain for compatibility
 - Internal CLI entrypoint is now `scripts/ael.ts`
 - Downstream adoption templates exist
+- Clean-room downstream tarball install/adoption/uninstall validation has passed
 - Read and core write commands support `--json`
 - Biome format/lint guardrails are configured
 - GitHub Actions CI runs format, lint, build, and test

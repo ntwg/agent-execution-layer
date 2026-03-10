@@ -146,8 +146,12 @@ export interface InstallScriptConflict {
 
 export interface InstallSummary {
   ok: boolean;
+  dryRun: boolean;
+  mode: 'minimal' | 'with-scripts';
+  rootInstructions: 'managed' | 'external';
+  rootInstructionsPath?: string;
   workspace: string;
-  packageJsonPath: string;
+  packageJsonPath?: string;
   agentKey: string;
   scripts: {
     added: string[];
@@ -161,4 +165,22 @@ export interface InstallSummary {
     unchanged: string[];
   };
   nextSteps: string[];
+}
+
+export interface UninstallSummary {
+  ok: boolean;
+  dryRun: boolean;
+  workspace: string;
+  packageJsonPath?: string;
+  files: {
+    removed: string[];
+    updated: string[];
+    unchanged: string[];
+  };
+  scripts: {
+    removed: string[];
+    preserved: string[];
+  };
+  nextSteps: string[];
+  warnings: string[];
 }

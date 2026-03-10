@@ -205,7 +205,7 @@ test('init writes a local generated config and doctor/smoke pass with stubs', (t
 
   const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
   assert.ok(existsSync(configPath));
-  assert.match(initOutput, /config: .*agent-execution\.config\.local\.json/);
+  assert.match(initOutput, /config: .*\.ael\/config\.local\.json/);
 
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
     repositoryId: string;
@@ -276,6 +276,7 @@ test('doctor passes with PAT auth fallback and no azure login', (t) => {
 
   const binDir = installStubCommands(workspace);
   const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
+  mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(
     configPath,
     `${JSON.stringify(
@@ -351,6 +352,7 @@ test('init --force refreshes stale board path defaults', (t) => {
 
   const binDir = installStubCommands(workspace);
   const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
+  mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(
     configPath,
     `${JSON.stringify(
@@ -425,4 +427,70 @@ test('init --force refreshes stale board path defaults', (t) => {
   };
   assert.equal(config.defaultAreaPath, 'agent-execution-layer');
   assert.equal(config.defaultIterationPath, 'agent-execution-layer');
+});
+
+test('doctor --adoption passes for a downstream repo installed with defaults', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  writeFileSync(
+    join(workspace, 'package.json'),
+    `${JSON.stringify({ name: 'adoption-pass-repo', private: true }, null, 2)}\n`,
+    'utf8',
+  );
+
+  runCli(['install', '--json'], workspace, {});
+
+  const doctorJson = JSON.parse(runCli(['doctor', '--adoption', '--json'], workspace, {})) as {
+    ok: boolean;
+    mode: string;
+    checks: Array<{ label: string; ok: boolean }>;
+  };
+
+  assert.equal(doctorJson.ok, true);
+  assert.equal(doctorJson.mode, 'adoption');
+  assert.ok(doctorJson.checks.some((check) => check.label === 'ael install manifest' && check.ok));
+  assert.ok(doctorJson.checks.some((check) => check.label === 'ael root entrypoint' && check.ok));
+  assert.ok(doctorJson.checks.some((check) => check.label === 'ael local ignore' && check.ok));
+});
+
+test('doctor --adoption fails when external entrypoint instructions are still missing', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  writeFileSync(
+    join(workspace, 'package.json'),
+    `${JSON.stringify({ name: 'adoption-fail-repo', private: true }, null, 2)}\n`,
+    'utf8',
+  );
+
+  runCli(
+    ['install', '--no-root-agents', '--entrypoint-file', 'docs/TEAM.md', '--json'],
+    workspace,
+    {},
+  );
+
+  let stdout = '';
+  try {
+    runCli(['doctor', '--adoption', '--json'], workspace, {});
+    assert.fail('expected adoption doctor to fail');
+  } catch (error) {
+    stdout = String((error as { stdout?: string }).stdout ?? '');
+  }
+
+  const doctorJson = JSON.parse(stdout) as {
+    ok: boolean;
+    mode: string;
+    checks: Array<{ label: string; ok: boolean; detail: string }>;
+    nextSteps: string[];
+  };
+
+  assert.equal(doctorJson.ok, false);
+  assert.equal(doctorJson.mode, 'adoption');
+  assert.ok(
+    doctorJson.checks.some(
+      (check) => check.label === 'ael external entrypoint' && check.ok === false,
+    ),
+  );
+  assert.match(doctorJson.nextSteps[0] ?? '', /docs\/TEAM\.md/);
 });

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   DEFAULT_CONFIG_FILENAME,
   LEGACY_CONFIG_FILENAME,
@@ -29,6 +29,7 @@ test('config discovery prefers local config and only falls back to legacy when n
   assert.equal(legacy.preferredPath, join(dir, DEFAULT_CONFIG_FILENAME));
   assert.equal(legacy.usedLegacyFallback, true);
 
+  mkdirSync(dirname(join(dir, DEFAULT_CONFIG_FILENAME)), { recursive: true });
   writeFileSync(join(dir, DEFAULT_CONFIG_FILENAME), '{}\n', 'utf8');
   const local = discoverConfigPath(dir, undefined);
   assert.equal(local.path, join(dir, DEFAULT_CONFIG_FILENAME));
@@ -98,6 +99,7 @@ test('config supports work item field defaults', (t) => {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
   const configPath = join(dir, DEFAULT_CONFIG_FILENAME);
+  mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(
     configPath,
     `${JSON.stringify(
