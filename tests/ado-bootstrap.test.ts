@@ -26,7 +26,9 @@ test('parseAzureDevOpsRemote handles ssh remotes', () => {
 
 test('parseAzureDevOpsRemote handles legacy visualstudio remotes', () => {
   assert.deepEqual(
-    parseAzureDevOpsRemote('https://example-org.visualstudio.com/example-project/_git/example-repo'),
+    parseAzureDevOpsRemote(
+      'https://example-org.visualstudio.com/example-project/_git/example-repo',
+    ),
     {
       organizationUrl: 'https://example-org.visualstudio.com',
       project: 'example-project',

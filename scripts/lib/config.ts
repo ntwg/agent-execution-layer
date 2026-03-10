@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 export type ReviewerMode = 'off' | 'assigned';
 export type PullRequestTagMode = 'non-agent' | 'all';
+export type WorkItemFieldValue = string | number | boolean;
 
 export interface AgentExecutionConfig {
   configVersion: number;
@@ -15,6 +16,10 @@ export interface AgentExecutionConfig {
   defaultWorkItemType: string;
   defaultAreaPath: string;
   defaultIterationPath: string;
+  workItemFieldDefaults: {
+    create: Record<string, WorkItemFieldValue>;
+    done: Record<string, WorkItemFieldValue>;
+  };
   sharedTags: string[];
   agents: AgentDefinition[];
   stateMap: {
@@ -69,7 +74,7 @@ export const DEFAULT_PR_DEFAULTS = {
   syncTagMode: 'non-agent' as PullRequestTagMode,
 };
 
-export const DEFAULT_CONFIG_VERSION = 2;
+export const DEFAULT_CONFIG_VERSION = 3;
 
 export const DEFAULT_AGENT_DEFINITIONS: AgentDefinition[] = [
   {
@@ -102,6 +107,7 @@ const CONFIG_TOP_LEVEL_KEYS = new Set([
   'defaultWorkItemType',
   'defaultAreaPath',
   'defaultIterationPath',
+  'workItemFieldDefaults',
   'sharedTags',
   'agents',
   'agentTags',
@@ -124,7 +130,7 @@ function normalizeAgentDefinitions(raw: Record<string, unknown>): AgentDefinitio
   if (Array.isArray(configuredAgents) && configuredAgents.length > 0) {
     return configuredAgents
       .filter(isRecord)
-      .map(entry => {
+      .map((entry) => {
         const key = normalizeAgentKey(typeof entry.key === 'string' ? entry.key : undefined);
         return {
           key,
@@ -133,32 +139,32 @@ function normalizeAgentDefinitions(raw: Record<string, unknown>): AgentDefinitio
           defaultAssignee: String(entry.defaultAssignee ?? ''),
         };
       })
-      .filter(agent => agent.key.length > 0);
+      .filter((agent) => agent.key.length > 0);
   }
 
   const legacyAgentTags = isRecord(raw.agentTags)
     ? Object.fromEntries(
-      Object.entries(raw.agentTags).map(([key, value]) => [normalizeAgentKey(key), value]),
-    )
+        Object.entries(raw.agentTags).map(([key, value]) => [normalizeAgentKey(key), value]),
+      )
     : {};
   const legacyAssignees = isRecord(raw.defaultAssignees)
     ? Object.fromEntries(
-      Object.entries(raw.defaultAssignees).map(([key, value]) => [normalizeAgentKey(key), value]),
-    )
+        Object.entries(raw.defaultAssignees).map(([key, value]) => [normalizeAgentKey(key), value]),
+      )
     : {};
   const discoveredKeys = Array.from(
     new Set(
       [
         ...Object.keys(legacyAgentTags),
         ...Object.keys(legacyAssignees),
-        ...DEFAULT_AGENT_DEFINITIONS.map(agent => agent.key),
+        ...DEFAULT_AGENT_DEFINITIONS.map((agent) => agent.key),
       ]
         .map(normalizeAgentKey)
         .filter(Boolean),
     ),
   );
 
-  return discoveredKeys.map(key => ({
+  return discoveredKeys.map((key) => ({
     key,
     tag: String(legacyAgentTags[key] ?? `agent:${key}`),
     branchPrefix: key,
@@ -170,9 +176,9 @@ function normalizeConfig(raw: Record<string, unknown>): AgentExecutionConfig {
   const parsed = raw as Partial<AgentExecutionConfig>;
   const agents = normalizeAgentDefinitions(raw);
   const firstAgentKey = agents[0]?.key ?? DEFAULT_AGENT_DEFINITIONS[0].key;
-  const defaultAgent = normalizeAgentKey(
-    typeof raw.defaultAgent === 'string' ? raw.defaultAgent : undefined,
-  ) || firstAgentKey;
+  const defaultAgent =
+    normalizeAgentKey(typeof raw.defaultAgent === 'string' ? raw.defaultAgent : undefined) ||
+    firstAgentKey;
   return {
     configVersion: Number.isInteger(parsed.configVersion)
       ? Number(parsed.configVersion)
@@ -186,6 +192,10 @@ function normalizeConfig(raw: Record<string, unknown>): AgentExecutionConfig {
     defaultWorkItemType: String(parsed.defaultWorkItemType ?? 'Task'),
     defaultAreaPath: String(parsed.defaultAreaPath ?? ''),
     defaultIterationPath: String(parsed.defaultIterationPath ?? ''),
+    workItemFieldDefaults: {
+      create: normalizeFieldDefaults(parsed.workItemFieldDefaults?.create),
+      done: normalizeFieldDefaults(parsed.workItemFieldDefaults?.done),
+    },
     sharedTags: Array.isArray(parsed.sharedTags) ? parsed.sharedTags.map(String) : [],
     agents,
     stateMap: {
@@ -198,14 +208,10 @@ function normalizeConfig(raw: Record<string, unknown>): AgentExecutionConfig {
         parsed.prDefaults?.reviewerMode === 'assigned'
           ? 'assigned'
           : DEFAULT_PR_DEFAULTS.reviewerMode,
-      reviewerRequired:
-        parsed.prDefaults?.reviewerRequired ?? DEFAULT_PR_DEFAULTS.reviewerRequired,
-      syncWorkItemTags:
-        parsed.prDefaults?.syncWorkItemTags ?? DEFAULT_PR_DEFAULTS.syncWorkItemTags,
+      reviewerRequired: parsed.prDefaults?.reviewerRequired ?? DEFAULT_PR_DEFAULTS.reviewerRequired,
+      syncWorkItemTags: parsed.prDefaults?.syncWorkItemTags ?? DEFAULT_PR_DEFAULTS.syncWorkItemTags,
       syncTagMode:
-        parsed.prDefaults?.syncTagMode === 'all'
-          ? 'all'
-          : DEFAULT_PR_DEFAULTS.syncTagMode,
+        parsed.prDefaults?.syncTagMode === 'all' ? 'all' : DEFAULT_PR_DEFAULTS.syncTagMode,
     },
     reportDefaults: {
       staleDays: Number.isFinite(parsed.reportDefaults?.staleDays)
@@ -216,6 +222,25 @@ function normalizeConfig(raw: Record<string, unknown>): AgentExecutionConfig {
         : DEFAULT_REPORT_DEFAULTS.recentDays,
     },
   };
+}
+
+function normalizeFieldValue(value: unknown): WorkItemFieldValue | undefined {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeFieldDefaults(raw: unknown): Record<string, WorkItemFieldValue> {
+  if (!isRecord(raw)) return {};
+  const normalized: Record<string, WorkItemFieldValue> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const normalizedKey = key.trim();
+    const normalizedValue = normalizeFieldValue(value);
+    if (!normalizedKey || normalizedValue === undefined) continue;
+    normalized[normalizedKey] = normalizedValue;
+  }
+  return normalized;
 }
 
 function validateRequiredString(
@@ -234,11 +259,7 @@ function validateRequiredString(
   }
 }
 
-function validateStringArray(
-  root: Record<string, unknown>,
-  field: string,
-  errors: string[],
-): void {
+function validateStringArray(root: Record<string, unknown>, field: string, errors: string[]): void {
   const value = root[field];
   if (!Array.isArray(value)) {
     errors.push(`"${field}" must be an array of strings.`);
@@ -246,7 +267,7 @@ function validateStringArray(
   }
 
   const invalidIndex = value.findIndex(
-    entry => typeof entry !== 'string' || entry.trim().length === 0,
+    (entry) => typeof entry !== 'string' || entry.trim().length === 0,
   );
   if (invalidIndex >= 0) {
     errors.push(`"${field}" item ${invalidIndex + 1} must be a non-empty string.`);
@@ -267,8 +288,8 @@ function validateLegacyAgentMap(
 
   const entries = Object.entries(value)
     .map(([key, entry]) => ({ key: normalizeAgentKey(key), entry }))
-    .filter(entry => Boolean(entry.key));
-  const keys = entries.map(entry => entry.key);
+    .filter((entry) => Boolean(entry.key));
+  const keys = entries.map((entry) => entry.key);
   if (keys.length === 0) {
     errors.push(`"${field}" must include at least one agent key.`);
     return [];
@@ -314,9 +335,7 @@ function validateAgents(root: Record<string, unknown>, errors: string[], warning
         seenTags.add(tag.toLowerCase());
       }
 
-      const branchPrefix = typeof entry.branchPrefix === 'string'
-        ? entry.branchPrefix.trim()
-        : '';
+      const branchPrefix = typeof entry.branchPrefix === 'string' ? entry.branchPrefix.trim() : '';
       if (!branchPrefix) {
         errors.push(`"agents" item ${index + 1} must include a non-empty "branchPrefix".`);
       } else if (seenBranchPrefixes.has(branchPrefix.toLowerCase())) {
@@ -330,10 +349,12 @@ function validateAgents(root: Record<string, unknown>, errors: string[], warning
       }
 
       const unknownKeys = Object.keys(entry).filter(
-        keyName => !['key', 'tag', 'branchPrefix', 'defaultAssignee'].includes(keyName),
+        (keyName) => !['key', 'tag', 'branchPrefix', 'defaultAssignee'].includes(keyName),
       );
       if (unknownKeys.length > 0) {
-        warnings.push(`"agents" item ${index + 1} has unrecognized keys: ${unknownKeys.join(', ')}.`);
+        warnings.push(
+          `"agents" item ${index + 1} has unrecognized keys: ${unknownKeys.join(', ')}.`,
+        );
       }
     });
 
@@ -346,7 +367,9 @@ function validateAgents(root: Record<string, unknown>, errors: string[], warning
     return;
   }
 
-  warnings.push('legacy "agentTags"/"defaultAssignees" config detected; re-run init to rewrite to "agents".');
+  warnings.push(
+    'legacy "agentTags"/"defaultAssignees" config detected; re-run init to rewrite to "agents".',
+  );
   const tagKeys = validateLegacyAgentMap(root, 'agentTags', errors, false);
   const assigneeKeys = validateLegacyAgentMap(root, 'defaultAssignees', errors, true);
   const allKeys = new Set([...tagKeys, ...assigneeKeys]);
@@ -373,9 +396,7 @@ function validateStateMap(
     }
   }
 
-  const unknownKeys = Object.keys(value).filter(
-    key => !['new', 'active', 'done'].includes(key),
-  );
+  const unknownKeys = Object.keys(value).filter((key) => !['new', 'active', 'done'].includes(key));
   if (unknownKeys.length > 0) {
     warnings.push(`"stateMap" has unrecognized keys: ${unknownKeys.join(', ')}.`);
   }
@@ -396,7 +417,11 @@ function validatePrDefaults(
     return;
   }
 
-  if (value.reviewerMode !== undefined && value.reviewerMode !== 'off' && value.reviewerMode !== 'assigned') {
+  if (
+    value.reviewerMode !== undefined &&
+    value.reviewerMode !== 'off' &&
+    value.reviewerMode !== 'assigned'
+  ) {
     errors.push('"prDefaults.reviewerMode" must be "off" or "assigned".');
   }
   if (value.reviewerRequired !== undefined && typeof value.reviewerRequired !== 'boolean') {
@@ -405,15 +430,73 @@ function validatePrDefaults(
   if (value.syncWorkItemTags !== undefined && typeof value.syncWorkItemTags !== 'boolean') {
     errors.push('"prDefaults.syncWorkItemTags" must be a boolean.');
   }
-  if (value.syncTagMode !== undefined && value.syncTagMode !== 'non-agent' && value.syncTagMode !== 'all') {
+  if (
+    value.syncTagMode !== undefined &&
+    value.syncTagMode !== 'non-agent' &&
+    value.syncTagMode !== 'all'
+  ) {
     errors.push('"prDefaults.syncTagMode" must be "non-agent" or "all".');
   }
 
   const unknownKeys = Object.keys(value).filter(
-    key => !['reviewerMode', 'reviewerRequired', 'syncWorkItemTags', 'syncTagMode'].includes(key),
+    (key) => !['reviewerMode', 'reviewerRequired', 'syncWorkItemTags', 'syncTagMode'].includes(key),
   );
   if (unknownKeys.length > 0) {
     warnings.push(`"prDefaults" has unrecognized keys: ${unknownKeys.join(', ')}.`);
+  }
+}
+
+function validateFieldDefaultMap(
+  value: unknown,
+  field: string,
+  errors: string[],
+  warnings: string[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push(`"${field}" must be an object keyed by Azure DevOps field reference name.`);
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (!key.trim()) {
+      errors.push(`"${field}" contains an empty field name.`);
+      continue;
+    }
+    if (!['string', 'number', 'boolean'].includes(typeof entry)) {
+      errors.push(`"${field}.${key}" must be a string, number, or boolean.`);
+    }
+  }
+
+  const unknownKeys = Object.keys(value).filter((key) => !key.trim());
+  if (unknownKeys.length > 0) {
+    warnings.push(`"${field}" has blank field keys that will be ignored.`);
+  }
+}
+
+function validateWorkItemFieldDefaults(
+  root: Record<string, unknown>,
+  errors: string[],
+  warnings: string[],
+): void {
+  const value = root.workItemFieldDefaults;
+  if (value === undefined) {
+    warnings.push(
+      '"workItemFieldDefaults" is missing; no extra Azure DevOps fields will be written.',
+    );
+    return;
+  }
+  if (!isRecord(value)) {
+    errors.push('"workItemFieldDefaults" must be an object.');
+    return;
+  }
+
+  validateFieldDefaultMap(value.create, 'workItemFieldDefaults.create', errors, warnings);
+  validateFieldDefaultMap(value.done, 'workItemFieldDefaults.done', errors, warnings);
+
+  const unknownKeys = Object.keys(value).filter((key) => !['create', 'done'].includes(key));
+  if (unknownKeys.length > 0) {
+    warnings.push(`"workItemFieldDefaults" has unrecognized keys: ${unknownKeys.join(', ')}.`);
   }
 }
 
@@ -441,7 +524,7 @@ function validateReportDefaults(
   }
 
   const unknownKeys = Object.keys(value).filter(
-    key => !['staleDays', 'recentDays'].includes(key),
+    (key) => !['staleDays', 'recentDays'].includes(key),
   );
   if (unknownKeys.length > 0) {
     warnings.push(`"reportDefaults" has unrecognized keys: ${unknownKeys.join(', ')}.`);
@@ -519,7 +602,7 @@ export function inspectConfigAtPath(
     }
 
     const errors: string[] = [];
-    const unknownKeys = Object.keys(parsed).filter(key => !CONFIG_TOP_LEVEL_KEYS.has(key));
+    const unknownKeys = Object.keys(parsed).filter((key) => !CONFIG_TOP_LEVEL_KEYS.has(key));
     if (unknownKeys.length > 0) {
       warnings.push(`unrecognized top-level fields: ${unknownKeys.join(', ')}.`);
     }
@@ -554,16 +637,25 @@ export function inspectConfigAtPath(
     validateRequiredString(parsed, 'project', errors, ['your-project']);
     validateRequiredString(parsed, 'repositoryId', errors, ['your-repository-id']);
     if (parsed.defaultBranch === undefined) {
-      warnings.push('"defaultBranch" is missing; built-in branch fallback will be used until init rewrites the config.');
-    } else if (typeof parsed.defaultBranch !== 'string' || parsed.defaultBranch.trim().length === 0) {
+      warnings.push(
+        '"defaultBranch" is missing; built-in branch fallback will be used until init rewrites the config.',
+      );
+    } else if (
+      typeof parsed.defaultBranch !== 'string' ||
+      parsed.defaultBranch.trim().length === 0
+    ) {
       errors.push('"defaultBranch" must be a non-empty string.');
     }
     validateRequiredString(parsed, 'defaultWorkItemType', errors);
     validateRequiredString(parsed, 'defaultAreaPath', errors);
     validateRequiredString(parsed, 'defaultIterationPath', errors);
+    validateWorkItemFieldDefaults(parsed, errors, warnings);
     validateStringArray(parsed, 'sharedTags', errors);
     validateAgents(parsed, errors, warnings);
-    if (parsed.defaultAgent !== undefined && (typeof parsed.defaultAgent !== 'string' || !parsed.defaultAgent.trim())) {
+    if (
+      parsed.defaultAgent !== undefined &&
+      (typeof parsed.defaultAgent !== 'string' || !parsed.defaultAgent.trim())
+    ) {
       errors.push('"defaultAgent" must be a non-empty string.');
     }
     validateStateMap(parsed, errors, warnings);
@@ -574,8 +666,10 @@ export function inspectConfigAtPath(
     if (normalized.agents.length === 0) {
       errors.push('config must define at least one agent.');
     }
-    if (!normalized.agents.some(agent => agent.key === normalized.defaultAgent)) {
-      errors.push(`"defaultAgent" must match one of the configured agents. Found "${normalized.defaultAgent}".`);
+    if (!normalized.agents.some((agent) => agent.key === normalized.defaultAgent)) {
+      errors.push(
+        `"defaultAgent" must match one of the configured agents. Found "${normalized.defaultAgent}".`,
+      );
     }
 
     return {
@@ -585,9 +679,7 @@ export function inspectConfigAtPath(
     };
   } catch (err) {
     return {
-      errors: [
-        `unable to read ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
-      ],
+      errors: [`unable to read ${configPath}: ${err instanceof Error ? err.message : String(err)}`],
       warnings,
     };
   }
@@ -599,7 +691,7 @@ export function loadConfigFromPath(
 ): AgentExecutionConfig {
   const inspection = inspectConfigAtPath(configPath, options);
   if (inspection.errors.length > 0 || !inspection.config) {
-    const details = inspection.errors.map(message => `- ${message}`).join('\n');
+    const details = inspection.errors.map((message) => `- ${message}`).join('\n');
     throw new Error(
       `invalid config at ${configPath}:\n${details}\nRun "ael validate-config" for details.`,
     );
@@ -608,5 +700,5 @@ export function loadConfigFromPath(
 }
 
 export function saveConfigToPath(configPath: string, config: AgentExecutionConfig): void {
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }

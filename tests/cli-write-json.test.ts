@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +22,7 @@ import {
 
 const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
 const TSX_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
-const CLI_PATH = join(REPO_ROOT, 'scripts', 'ado-workflow.ts');
+const CLI_PATH = join(REPO_ROOT, 'scripts', 'ael.ts');
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), 'ael-write-json-test-'));
@@ -25,13 +33,19 @@ function writeExecutable(path: string, body: string): void {
   chmodSync(path, 0o755);
 }
 
-function installStubCommands(workspace: string): { binDir: string; gitStatePath: string; azStatePath: string } {
+function installStubCommands(workspace: string): {
+  binDir: string;
+  gitStatePath: string;
+  azStatePath: string;
+} {
   const binDir = join(workspace, 'bin');
   const gitStatePath = join(workspace, 'git-state.json');
   const azStatePath = join(workspace, 'az-state.json');
   mkdirSync(binDir, { recursive: true });
 
-  writeExecutable(join(binDir, 'git'), `#!/usr/bin/env node
+  writeExecutable(
+    join(binDir, 'git'),
+    `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 const statePath = process.env.AEL_WRITE_GIT_STATE;
@@ -115,9 +129,12 @@ if (args[0] === 'branch' && args[1] === '--show-current') {
 } else {
   fail();
 }
-`);
+`,
+  );
 
-  writeExecutable(join(binDir, 'az'), `#!/usr/bin/env node
+  writeExecutable(
+    join(binDir, 'az'),
+    `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 const statePath = process.env.AEL_WRITE_AZ_STATE;
@@ -208,6 +225,16 @@ const state = loadState();
 
 if (args[0] === 'account' && args[1] === 'get-access-token') {
   out('test-access-token\\n');
+} else if (args[0] === 'devops' && args[1] === 'user' && args[2] === 'show') {
+  const user = value('--user') ?? 'owner@example.com';
+  outJson({
+    user: {
+      displayName: user,
+      mailAddress: user,
+      principalName: user,
+      uniqueName: user,
+    },
+  });
 } else if (args[0] === 'boards' && args[1] === 'work-item' && args[2] === 'create') {
   const id = state.nextWorkItemId++;
   const item = {
@@ -362,9 +389,12 @@ if (args[0] === 'account' && args[1] === 'get-access-token') {
 } else {
   fail();
 }
-`);
+`,
+  );
 
-  writeExecutable(join(binDir, 'curl'), `#!/usr/bin/env node
+  writeExecutable(
+    join(binDir, 'curl'),
+    `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 const statePath = process.env.AEL_WRITE_AZ_STATE;
@@ -480,44 +510,61 @@ if (method === 'GET' && parsed.pathname.includes('/_apis/wit/workitems')) {
 } else {
   fail();
 }
-`);
+`,
+  );
 
   return { binDir, gitStatePath, azStatePath };
 }
 
 function writeConfig(workspace: string): void {
-  writeFileSync(join(workspace, DEFAULT_CONFIG_FILENAME), JSON.stringify({
-    configVersion: DEFAULT_CONFIG_VERSION,
-    enabled: true,
-    organizationUrl: 'https://dev.azure.com/example-org',
-    project: 'example-project',
-    repositoryId: 'example-repo-id',
-    defaultBranch: 'main',
-    defaultAgent: 'codex',
-    defaultWorkItemType: 'Task',
-    defaultAreaPath: 'example-project',
-    defaultIterationPath: 'example-project',
-    sharedTags: ['agent-managed'],
-    agents: [
+  writeFileSync(
+    join(workspace, DEFAULT_CONFIG_FILENAME),
+    `${JSON.stringify(
       {
-        key: 'codex',
-        tag: 'agent:codex',
-        branchPrefix: 'codex',
-        defaultAssignee: '',
+        configVersion: DEFAULT_CONFIG_VERSION,
+        enabled: true,
+        organizationUrl: 'https://dev.azure.com/example-org',
+        project: 'example-project',
+        repositoryId: 'example-repo-id',
+        defaultBranch: 'main',
+        defaultAgent: 'codex',
+        defaultWorkItemType: 'Task',
+        defaultAreaPath: 'example-project',
+        defaultIterationPath: 'example-project',
+        workItemFieldDefaults: {
+          create: {
+            'Custom.AgentManaged': true,
+          },
+          done: {
+            'Custom.CompletionChannel': 'ael',
+          },
+        },
+        sharedTags: ['agent-managed'],
+        agents: [
+          {
+            key: 'codex',
+            tag: 'agent:codex',
+            branchPrefix: 'codex',
+            defaultAssignee: 'owner@example.com',
+          },
+        ],
+        stateMap: {
+          new: 'New',
+          active: 'Active',
+          done: 'Closed',
+        },
+        prDefaults: DEFAULT_PR_DEFAULTS,
+        reportDefaults: DEFAULT_REPORT_DEFAULTS,
       },
-    ],
-    stateMap: {
-      new: 'New',
-      active: 'Active',
-      done: 'Closed',
-    },
-    prDefaults: DEFAULT_PR_DEFAULTS,
-    reportDefaults: DEFAULT_REPORT_DEFAULTS,
-  }, null, 2) + '\n', 'utf8');
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
 }
 
 function writeAzState(path: string, value: unknown): void {
-  writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf8');
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
 function runCli(args: string[], workspace: string, extraEnv: Record<string, string>): string {
@@ -531,7 +578,7 @@ function runCli(args: string[], workspace: string, extraEnv: Record<string, stri
   });
 }
 
-test('write-side commands emit structured json', t => {
+test('write-side commands emit structured json', (t) => {
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
 
@@ -544,17 +591,35 @@ test('write-side commands emit structured json', t => {
     AEL_WRITE_AZ_STATE: azStatePath,
   };
 
-  const created = JSON.parse(runCli([
-    'create',
-    '--title', 'JSON command flow',
-    '--human-summary', 'Make command outputs machine-readable',
-    '--agent-context', 'Add --json support to mutating commands.',
-    '--priority', '1',
-    '--tags', 'automation;cli',
-    '--json',
-  ], workspace, env)) as {
+  const created = JSON.parse(
+    runCli(
+      [
+        'create',
+        '--title',
+        'JSON command flow',
+        '--human-summary',
+        'Make command outputs machine-readable',
+        '--agent-context',
+        'Add --json support to mutating commands.',
+        '--priority',
+        '1',
+        '--tags',
+        'automation;cli',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
     ok: boolean;
-    workItem: { id: number; title: string; type: string; priority?: number; tags: string[] };
+    workItem: {
+      id: number;
+      title: string;
+      type: string;
+      priority?: number;
+      tags: string[];
+      fieldsApplied: Record<string, string | number | boolean>;
+    };
     warnings: string[];
   };
   assert.equal(created.ok, true);
@@ -563,16 +628,29 @@ test('write-side commands emit structured json', t => {
   assert.equal(created.workItem.type, 'Task');
   assert.equal(created.workItem.priority, 1);
   assert.deepEqual(created.workItem.tags, ['agent-managed', 'automation', 'cli']);
+  assert.equal(created.workItem.fieldsApplied['Custom.AgentManaged'], true);
+  assert.equal(created.workItem.fieldsApplied['System.Tags'], 'agent-managed;automation;cli');
+  assert.equal(created.workItem.fieldsApplied['Microsoft.VSTS.Common.Priority'], 1);
   assert.deepEqual(created.warnings, []);
 
-  const claimed = JSON.parse(runCli([
-    'claim',
-    '--id', '100',
-    '--agent', 'codex',
-    '--assigned-to', 'Owner Name',
-    '--note', 'Taking ownership.',
-    '--json',
-  ], workspace, env)) as {
+  const claimed = JSON.parse(
+    runCli(
+      [
+        'claim',
+        '--id',
+        '100',
+        '--agent',
+        'codex',
+        '--assigned-to',
+        'owner@example.com',
+        '--note',
+        'Taking ownership.',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
     ok: boolean;
     id: number;
     state: string;
@@ -585,14 +663,24 @@ test('write-side commands emit structured json', t => {
   assert.equal(claimed.agent, 'codex');
   assert.ok(claimed.tags.includes('agent:codex'));
 
-  const branched = JSON.parse(runCli([
-    'branch',
-    '--id', '100',
-    '--agent', 'codex',
-    '--branch-name', 'codex/100-json-command-flow',
-    '--base', 'main',
-    '--json',
-  ], workspace, env)) as {
+  const branched = JSON.parse(
+    runCli(
+      [
+        'branch',
+        '--id',
+        '100',
+        '--agent',
+        'codex',
+        '--branch-name',
+        'codex/100-json-command-flow',
+        '--base',
+        'main',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
     ok: boolean;
     branchName: string;
     baseBranch: string;
@@ -601,13 +689,13 @@ test('write-side commands emit structured json', t => {
   assert.equal(branched.branchName, 'codex/100-json-command-flow');
   assert.equal(branched.baseBranch, 'main');
 
-  const committed = JSON.parse(runCli([
-    'commit',
-    '--id', '100',
-    '--message', 'Add structured CLI output',
-    '--all',
-    '--json',
-  ], workspace, env)) as {
+  const committed = JSON.parse(
+    runCli(
+      ['commit', '--id', '100', '--message', 'Add structured CLI output', '--all', '--json'],
+      workspace,
+      env,
+    ),
+  ) as {
     ok: boolean;
     id: number;
     subject: string;
@@ -618,13 +706,9 @@ test('write-side commands emit structured json', t => {
   assert.equal(committed.subject, 'AB#100 Add structured CLI output');
   assert.equal(committed.addAll, true);
 
-  const pullRequest = JSON.parse(runCli([
-    'pr',
-    '--id', '100',
-    '--ready',
-    '--no-sync-pr-tags',
-    '--json',
-  ], workspace, env)) as {
+  const pullRequest = JSON.parse(
+    runCli(['pr', '--id', '100', '--ready', '--no-sync-pr-tags', '--json'], workspace, env),
+  ) as {
     ok: boolean;
     created: boolean;
     pullRequestId: number;
@@ -643,13 +727,9 @@ test('write-side commands emit structured json', t => {
   assert.equal(pullRequest.syncPrTags, false);
   assert.ok(pullRequest.url);
 
-  const existingPullRequest = JSON.parse(runCli([
-    'pr',
-    '--id', '100',
-    '--ready',
-    '--no-sync-pr-tags',
-    '--json',
-  ], workspace, env)) as {
+  const existingPullRequest = JSON.parse(
+    runCli(['pr', '--id', '100', '--ready', '--no-sync-pr-tags', '--json'], workspace, env),
+  ) as {
     ok: boolean;
     created: boolean;
     pullRequestId: number;
@@ -658,26 +738,47 @@ test('write-side commands emit structured json', t => {
   assert.equal(existingPullRequest.created, false);
   assert.equal(existingPullRequest.pullRequestId, 200);
 
-  const secondItem = JSON.parse(runCli([
-    'create',
-    '--title', 'JSON start flow',
-    '--human-summary', 'Exercise start JSON',
-    '--agent-context', 'Claim and branch in one command.',
-    '--json',
-  ], workspace, env)) as {
+  const secondItem = JSON.parse(
+    runCli(
+      [
+        'create',
+        '--title',
+        'JSON start flow',
+        '--human-summary',
+        'Exercise start JSON',
+        '--agent-context',
+        'Claim and branch in one command.',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
     workItem: { id: number };
   };
 
-  const started = JSON.parse(runCli([
-    'start',
-    '--id', String(secondItem.workItem.id),
-    '--agent', 'codex',
-    '--assigned-to', 'Owner Name',
-    '--branch-name', `codex/${secondItem.workItem.id}-start-flow`,
-    '--base', 'main',
-    '--note', 'Starting now.',
-    '--json',
-  ], workspace, env)) as {
+  const started = JSON.parse(
+    runCli(
+      [
+        'start',
+        '--id',
+        String(secondItem.workItem.id),
+        '--agent',
+        'codex',
+        '--assigned-to',
+        'owner@example.com',
+        '--branch-name',
+        `codex/${secondItem.workItem.id}-start-flow`,
+        '--base',
+        'main',
+        '--note',
+        'Starting now.',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
     ok: boolean;
     id: number;
     state: string;
@@ -688,17 +789,29 @@ test('write-side commands emit structured json', t => {
   assert.equal(started.state, 'Active');
   assert.equal(started.branchName, `codex/${secondItem.workItem.id}-start-flow`);
 
-  const completed = JSON.parse(runCli([
-    'done',
-    '--id', '100',
-    '--summary', 'Structured output shipped.',
-    '--impact', 'Agents can parse mutating command results safely.',
-    '--checks', 'build;test',
-    '--changed-files', 'scripts/ado-workflow.ts;tests/cli-write-json.test.ts',
-    '--pr', '200',
-    '--skip-link-checks',
-    '--json',
-  ], workspace, env)) as {
+  const completed = JSON.parse(
+    runCli(
+      [
+        'done',
+        '--id',
+        '100',
+        '--summary',
+        'Structured output shipped.',
+        '--impact',
+        'Agents can parse mutating command results safely.',
+        '--checks',
+        'build;test',
+        '--changed-files',
+        'scripts/ael.ts;tests/cli-write-json.test.ts',
+        '--pr',
+        '200',
+        '--skip-link-checks',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
     ok: boolean;
     id: number;
     state: string;
@@ -706,6 +819,7 @@ test('write-side commands emit structured json', t => {
     impact: string;
     checks: string[];
     changedFiles: string[];
+    fieldsApplied: Record<string, string | number | boolean>;
     pr: string;
     skipLinkChecks: boolean;
   };
@@ -715,10 +829,8 @@ test('write-side commands emit structured json', t => {
   assert.equal(completed.summary, 'Structured output shipped.');
   assert.equal(completed.impact, 'Agents can parse mutating command results safely.');
   assert.deepEqual(completed.checks, ['build', 'test']);
-  assert.deepEqual(completed.changedFiles, [
-    'scripts/ado-workflow.ts',
-    'tests/cli-write-json.test.ts',
-  ]);
+  assert.deepEqual(completed.changedFiles, ['scripts/ael.ts', 'tests/cli-write-json.test.ts']);
+  assert.equal(completed.fieldsApplied['Custom.CompletionChannel'], 'ael');
   assert.equal(completed.pr, '200');
   assert.equal(completed.skipLinkChecks, true);
 
@@ -747,10 +859,10 @@ test('write-side commands emit structured json', t => {
     commits: Array<{ message: string }>;
   };
   assert.equal(gitState.currentBranch, `codex/${secondItem.workItem.id}-start-flow`);
-  assert.ok(gitState.commits.some(commit => commit.message.includes('AB#100')));
+  assert.ok(gitState.commits.some((commit) => commit.message.includes('AB#100')));
 });
 
-test('report, audit, and retag emit structured json', t => {
+test('report, audit, and retag emit structured json', (t) => {
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
 
@@ -769,7 +881,7 @@ test('report, audit, and retag emit structured json', t => {
           'System.WorkItemType': 'Task',
           'System.Tags': 'agent-managed;agent:codex',
           'Microsoft.VSTS.Common.Priority': 1,
-          'System.AssignedTo': { displayName: 'Owner Name' },
+          'System.AssignedTo': { uniqueName: 'owner@example.com', displayName: 'Owner Name' },
           'System.ChangedDate': '2026-02-20T12:00:00.000Z',
         },
         relations: [
@@ -844,11 +956,18 @@ test('report, audit, and retag emit structured json', t => {
         targetRefName: 'refs/heads/main',
         status: 'active',
         isDraft: false,
-        repository: { webUrl: 'https://dev.azure.com/example-org/example-project/_git/example-repo' },
+        repository: {
+          webUrl: 'https://dev.azure.com/example-org/example-project/_git/example-repo',
+        },
         workItemIds: [100],
         labels: [],
         reviewers: [
-          { displayName: 'Owner Name', uniqueName: 'owner@example.com', vote: 0, isRequired: false },
+          {
+            displayName: 'Owner Name',
+            uniqueName: 'owner@example.com',
+            vote: 0,
+            isRequired: false,
+          },
         ],
       },
     ],
@@ -860,12 +979,9 @@ test('report, audit, and retag emit structured json', t => {
     AEL_WRITE_AZ_STATE: azStatePath,
   };
 
-  const retag = JSON.parse(runCli([
-    'retag',
-    '--id', '101',
-    '--dry-run',
-    '--json',
-  ], workspace, env)) as {
+  const retag = JSON.parse(
+    runCli(['retag', '--id', '101', '--dry-run', '--json'], workspace, env),
+  ) as {
     ok: boolean;
     dryRun: boolean;
     targetCount: number;
@@ -884,13 +1000,13 @@ test('report, audit, and retag emit structured json', t => {
     applied: false,
   });
 
-  const report = JSON.parse(runCli([
-    'report',
-    '--limit', '10',
-    '--stale-days', '7',
-    '--recent-days', '7',
-    '--json',
-  ], workspace, env)) as {
+  const report = JSON.parse(
+    runCli(
+      ['report', '--limit', '10', '--stale-days', '7', '--recent-days', '7', '--json'],
+      workspace,
+      env,
+    ),
+  ) as {
     ok: boolean;
     counts: Record<string, number>;
     agentWorkload: Array<{ agent: string; activeCount: number }>;
@@ -911,19 +1027,25 @@ test('report, audit, and retag emit structured json', t => {
   });
   assert.deepEqual(report.agentWorkload, [{ agent: 'codex', activeCount: 2 }]);
   assert.equal(report.unclaimedNewCount, 1);
-  assert.deepEqual(report.blockedItems.map(item => item.id), [103]);
+  assert.deepEqual(
+    report.blockedItems.map((item) => item.id),
+    [103],
+  );
   assert.equal(report.activePullRequests[0].pullRequestId, 200);
   assert.equal(report.activePullRequests[0].workItemCount, 1);
   assert.deepEqual(report.activePullRequests[0].tags, []);
-  assert.deepEqual(report.recentDone.map(item => item.id), [102]);
+  assert.deepEqual(
+    report.recentDone.map((item) => item.id),
+    [102],
+  );
 
-  const audit = JSON.parse(runCli([
-    'audit',
-    '--state', 'open',
-    '--limit', '10',
-    '--stale-days', '7',
-    '--json',
-  ], workspace, env)) as {
+  const audit = JSON.parse(
+    runCli(
+      ['audit', '--state', 'open', '--limit', '10', '--stale-days', '7', '--json'],
+      workspace,
+      env,
+    ),
+  ) as {
     ok: boolean;
     workItemsScanned: number;
     activePullRequestsScanned: number;
@@ -936,8 +1058,20 @@ test('report, audit, and retag emit structured json', t => {
   assert.equal(audit.activePullRequestsScanned, 1);
   assert.equal(audit.findingCount, 4);
   assert.deepEqual(audit.findingCounts, { warn: 3, info: 1, repaired: 0 });
-  assert.ok(audit.findings.some(finding => finding.type === 'description-format' && finding.scope === 'WI#100'));
-  assert.ok(audit.findings.some(finding => finding.type === 'stale-active' && finding.scope === 'WI#103'));
-  assert.ok(audit.findings.some(finding => finding.type === 'pr-description-format' && finding.scope === 'PR#200'));
-  assert.ok(audit.findings.some(finding => finding.type === 'pr-tags' && finding.scope === 'PR#200'));
+  assert.ok(
+    audit.findings.some(
+      (finding) => finding.type === 'description-format' && finding.scope === 'WI#100',
+    ),
+  );
+  assert.ok(
+    audit.findings.some((finding) => finding.type === 'stale-active' && finding.scope === 'WI#103'),
+  );
+  assert.ok(
+    audit.findings.some(
+      (finding) => finding.type === 'pr-description-format' && finding.scope === 'PR#200',
+    ),
+  );
+  assert.ok(
+    audit.findings.some((finding) => finding.type === 'pr-tags' && finding.scope === 'PR#200'),
+  );
 });

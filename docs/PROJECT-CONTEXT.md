@@ -25,7 +25,16 @@ The extracted engine currently covers:
 
 Current entrypoint:
 
-- `scripts/ado-workflow.ts`
+- `scripts/ael.ts`
+
+Core internal modules:
+
+- `scripts/lib/ado-cli-runtime.ts`
+- `scripts/lib/ado-cli-bootstrap.ts`
+- `scripts/lib/ado-cli-workflow.ts`
+- `scripts/lib/ado-cli-reporting.ts`
+- `scripts/lib/ado-cli-install.ts`
+- `scripts/lib/ado-cli-types.ts`
 
 ## Relationship To Semantic Layer
 
@@ -49,9 +58,15 @@ As of March 9, 2026:
 - `ael:init`, `ael:doctor`, and `ael:smoke` now exist for bootstrap and preflight
 - `install` bootstraps downstream repos with package scripts, `AGENTS.md` workflow instructions, project contract template, and `.gitignore` setup
 - `ael:init` writes generated local config to `agent-execution.config.local.json`
+- `ael:init` now auto-detects default area and iteration paths when Azure Boards returns them
 - the CLI has extracted `config`, `ado-bootstrap`, and `pr-description` helper modules under `scripts/lib`
 - the repo is package-ready with an `ael` bin entrypoint plus downstream adoption templates
 - both read/bootstrap commands and core mutating commands now support `--json` for agent-safe parsing
+- Azure DevOps PAT auth fallback is now supported via `AEL_ADO_PAT`
+- configured assignee/reviewer identities are now resolved through Azure DevOps before write operations run
+- `doctor` and `smoke` now inspect branch policy visibility and active PR merge readiness
+- the CLI entrypoint is now thin, with command logic split across focused modules under `scripts/lib`
+- Biome formatter/lint guardrails and GitHub Actions CI are now in place
 - this repo is initialized as a local git repository on `main`, but still has no `origin` remote
 
 Validated commands:
@@ -78,9 +93,9 @@ Main remaining hardening gaps:
 
 1. the first live validation pass against this repo's own guinea-pig Azure DevOps project has not happened yet
 2. the local git repo still has no `origin` remote or detected remote default branch
-3. the CLI still has most command execution logic in one large script
+3. some modules are still large enough to split further after the first live guinea-pig pass
 4. long-term optional GitHub code-host support is not started
-5. GitHub repository metadata in `package.json` still depends on the final public repo URL
+5. package metadata may need a final URL/visibility confirmation before public publish
 
 ## Near-Term Priority
 
@@ -88,8 +103,8 @@ If continuing work in this repo, the highest-value next steps are:
 
 1. connect this repo to its own guinea-pig Azure DevOps remote and validate it end to end
 2. run a full live lifecycle test from work item creation through PR and closeout
-3. keep splitting `scripts/ado-workflow.ts` into focused command modules
-4. expand automated CLI coverage after the first live pass exposes real edge cases
+3. confirm the installed-package downstream path in a clean repo
+4. keep tightening module boundaries if the first live pass exposes new pressure points
 5. decide whether later GitHub support is repo-host-only or full tracker parity
 
 Do not spend time adding semantic-layer-specific behavior here.
@@ -150,6 +165,8 @@ When starting fresh in this repo:
 
 ```bash
 npm install
+npm run format:check
+npm run lint
 npm run build
 npm test
 npm run ael:init

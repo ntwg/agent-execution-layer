@@ -76,8 +76,8 @@ Until this repo is more fully productized, prioritize:
 
 1. validating against a fresh guinea-pig Azure DevOps project
 2. running a full live lifecycle test
-3. breaking the workflow CLI into focused modules
-4. expanding automated CLI coverage after the first live pass
+3. expanding automated CLI coverage after the first live pass
+4. confirming the downstream installed-package path in a clean repo
 5. keeping any future GitHub support scoped behind Azure DevOps-first design
 
 ## References
@@ -89,4 +89,5 @@ Until this repo is more fully productized, prioritize:
 - `docs/FIRST-PUSH-CHECKLIST.md`
 - `docs/RELEASE-POLICY.md`
 - `CHANGELOG.md`
-- `scripts/ado-workflow.ts`
+- `scripts/ael.ts`
+- `scripts/lib/ado-cli-*.ts`

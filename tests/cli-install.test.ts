@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
 const TSX_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
-const CLI_PATH = join(REPO_ROOT, 'scripts', 'ado-workflow.ts');
+const CLI_PATH = join(REPO_ROOT, 'scripts', 'ael.ts');
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), 'ael-install-test-'));
@@ -22,19 +22,27 @@ function runCli(args: string[], workspace: string): string {
   });
 }
 
-test('install writes downstream package scripts and repo contract files', t => {
+test('install writes downstream package scripts and repo contract files', (t) => {
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
 
-  writeFileSync(join(workspace, 'package.json'), JSON.stringify({
-    name: 'guinea-pig-repo',
-    private: true,
-    scripts: {
-      build: 'tsc -p .',
-      test: 'vitest run',
-      lint: 'eslint .',
-    },
-  }, null, 2) + '\n', 'utf8');
+  writeFileSync(
+    join(workspace, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'guinea-pig-repo',
+        private: true,
+        scripts: {
+          build: 'tsc -p .',
+          test: 'vitest run',
+          lint: 'eslint .',
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
   writeFileSync(join(workspace, 'AGENTS.md'), '# Existing Instructions\n', 'utf8');
 
   const summary = JSON.parse(runCli(['install', '--agent-key', 'cursor', '--json'], workspace)) as {
@@ -47,10 +55,10 @@ test('install writes downstream package scripts and repo contract files', t => {
   assert.equal(summary.ok, true);
   assert.ok(summary.scripts.added.includes('ael:install'));
   assert.ok(summary.scripts.added.includes('ael:init'));
-  assert.ok(summary.files.updated.some(path => path.endsWith('/package.json')));
-  assert.ok(summary.files.updated.some(path => path.endsWith('/AGENTS.md')));
-  assert.ok(summary.files.created.some(path => path.endsWith('/docs/AEL-PROJECT-CONTRACT.md')));
-  assert.ok(summary.nextSteps.some(step => step.includes('ael:init')));
+  assert.ok(summary.files.updated.some((path) => path.endsWith('/package.json')));
+  assert.ok(summary.files.updated.some((path) => path.endsWith('/AGENTS.md')));
+  assert.ok(summary.files.created.some((path) => path.endsWith('/docs/AEL-PROJECT-CONTRACT.md')));
+  assert.ok(summary.nextSteps.some((step) => step.includes('ael:init')));
 
   const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>;
@@ -79,28 +87,30 @@ test('install writes downstream package scripts and repo contract files', t => {
   const statusJson = JSON.parse(runCli(['status', '--json'], workspace)) as {
     nextSteps: string[];
   };
-  assert.deepEqual(statusJson.nextSteps, [
-    'npm run ael:init',
-    'npm run ael:doctor',
-  ]);
+  assert.deepEqual(statusJson.nextSteps, ['npm run ael:init', 'npm run ael:doctor']);
 });
 
-test('install fails fast on conflicting package scripts without force', t => {
+test('install fails fast on conflicting package scripts without force', (t) => {
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
 
-  writeFileSync(join(workspace, 'package.json'), JSON.stringify({
-    name: 'conflict-repo',
-    private: true,
-    scripts: {
-      'ael:status': 'echo custom-status',
-    },
-  }, null, 2) + '\n', 'utf8');
-
-  assert.throws(
-    () => runCli(['install', '--json'], workspace),
-    /Command failed/,
+  writeFileSync(
+    join(workspace, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'conflict-repo',
+        private: true,
+        scripts: {
+          'ael:status': 'echo custom-status',
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
   );
+
+  assert.throws(() => runCli(['install', '--json'], workspace), /Command failed/);
 
   const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>;

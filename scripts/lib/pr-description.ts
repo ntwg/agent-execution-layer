@@ -75,7 +75,7 @@ export function extractPlainSectionFromHtml(raw: string, sectionTitle: string): 
   if (!sectionMatch) return '';
   const itemRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
   const items = Array.from(sectionMatch[1].matchAll(itemRegex))
-    .map(match => decodeHtmlEntities(match[1].replace(/<[^>]+>/g, '').trim()))
+    .map((match) => decodeHtmlEntities(match[1].replace(/<[^>]+>/g, '').trim()))
     .filter(Boolean);
   return items.join('\n');
 }
@@ -108,9 +108,9 @@ export function extractSectionBlocksFromText(
     if (!title) continue;
     const content = (match[2] ?? '')
       .split('\n')
-      .map(line => line.trim())
+      .map((line) => line.trim())
       .filter(Boolean)
-      .map(line => line.replace(/^[-*]\s+/, '').trim())
+      .map((line) => line.replace(/^[-*]\s+/, '').trim())
       .filter(Boolean);
     sections.push({
       title,
@@ -130,33 +130,35 @@ export function extractPlainSection(
 
   const normalized = normalizeMarkdownishText(raw);
   if (!normalized) return '';
-  const fromText = extractSectionBlocksFromText(normalized, sectionTitles)
-    .find(section => section.title.toLowerCase() === sectionTitle.toLowerCase());
+  const fromText = extractSectionBlocksFromText(normalized, sectionTitles).find(
+    (section) => section.title.toLowerCase() === sectionTitle.toLowerCase(),
+  );
   return fromText ? fromText.items.join('\n') : '';
 }
 
 function renderHtmlSection(title: string, items: string[]): string {
   const safeItems = items.length > 0 ? items : [''];
-  const listItems = safeItems
-    .map(item => `<li>${escapeHtml(item)}</li>`)
-    .join('');
+  const listItems = safeItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
   return `<div><p><strong>${escapeHtml(title)}</strong></p><ul>${listItems}</ul></div>`;
 }
 
 function renderHtmlSections(sections: Array<{ title: string; items: string[] }>): string {
-  return sections.map(section => renderHtmlSection(section.title, section.items)).join('');
+  return sections.map((section) => renderHtmlSection(section.title, section.items)).join('');
 }
 
 function renderPlainTextSection(title: string, items: string[]): string {
   const safeItems = items.length > 0 ? items : [''];
-  return [title, ...safeItems.map(item => `- ${item}`), ''].join('\n');
+  return [title, ...safeItems.map((item) => `- ${item}`), ''].join('\n');
 }
 
 function renderPlainTextSections(
   sections: Array<{ title: string; items: string[] }>,
   prefixLines: string[] = [],
 ): string {
-  return [...prefixLines, ...sections.map(section => renderPlainTextSection(section.title, section.items))]
+  return [
+    ...prefixLines,
+    ...sections.map((section) => renderPlainTextSection(section.title, section.items)),
+  ]
     .join('\n')
     .trim();
 }
@@ -256,17 +258,19 @@ export function buildWorkItemDescription(params: {
   const agentContextItems = params.agentContext
     ? params.agentContext
         .split('\n')
-        .map(line => line.trim())
+        .map((line) => line.trim())
         .filter(Boolean)
     : ['Technical implementation context to be added during execution.'];
 
-  const mappedTableItems = params.mappedTables.length > 0
-    ? params.mappedTables
-    : ['To be identified during implementation.'];
+  const mappedTableItems =
+    params.mappedTables.length > 0
+      ? params.mappedTables
+      : ['To be identified during implementation.'];
 
-  const acceptanceItems = params.acceptance.length > 0
-    ? params.acceptance
-    : ['Implement changes and pass required validation checks.'];
+  const acceptanceItems =
+    params.acceptance.length > 0
+      ? params.acceptance
+      : ['Implement changes and pass required validation checks.'];
 
   return [
     renderHtmlSection('Human Summary', [
@@ -286,19 +290,24 @@ export function renderPullRequestDescription(
   const lines = [`AB#${id}`, ''];
   const summaryLines = humanSummary
     .split('\n')
-    .map(value => value.trim())
+    .map((value) => value.trim())
     .filter(Boolean);
   lines.push(
     renderPlainTextSection(
       'Summary',
-      summaryLines.length > 0 ? summaryLines : ['Human-readable summary was not provided on the work item.'],
+      summaryLines.length > 0
+        ? summaryLines
+        : ['Human-readable summary was not provided on the work item.'],
     ),
   );
   if (agentContext) {
     lines.push(
       renderPlainTextSection(
         'Agent Context',
-        agentContext.split('\n').map(value => value.trim()).filter(Boolean),
+        agentContext
+          .split('\n')
+          .map((value) => value.trim())
+          .filter(Boolean),
       ),
     );
   }

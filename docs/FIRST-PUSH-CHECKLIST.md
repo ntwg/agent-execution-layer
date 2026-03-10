@@ -21,7 +21,7 @@ Use this before the first public push or package publish.
 ## Recommended Before Public Release
 
 1. Decide whether to keep the npm package name `agent-execution-layer` or change it before publishing.
-2. Add GitHub repository metadata to `package.json` once the final repo URL exists.
+2. Confirm the GitHub repository metadata in `package.json` matches the final public repo URL.
 3. Remove `"private": true` only when the package is ready to publish.
 4. Confirm the install flow in a clean downstream repo:
    - install package
@@ -35,7 +35,10 @@ Use this before the first public push or package publish.
 - Public CLI surface is centered on `ael`
 - Repo-local `npm run ael:*` scripts exist
 - Legacy `npm run ado:*` aliases remain for compatibility
+- Internal CLI entrypoint is now `scripts/ael.ts`
 - Downstream adoption templates exist
 - Read and core write commands support `--json`
+- Biome format/lint guardrails are configured
+- GitHub Actions CI runs format, lint, build, and test
 - `CONTRIBUTING.md` and `SECURITY.md` exist for public-repo basics
 - A default MIT `LICENSE` is present

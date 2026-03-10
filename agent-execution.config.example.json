@@ -1,5 +1,5 @@
 {
-  "configVersion": 2,
+  "configVersion": 3,
   "enabled": true,
   "organizationUrl": "https://dev.azure.com/your-org",
   "project": "your-project",
@@ -9,9 +9,11 @@
   "defaultWorkItemType": "Task",
   "defaultAreaPath": "your-project",
   "defaultIterationPath": "your-project",
-  "sharedTags": [
-    "agent-managed"
-  ],
+  "workItemFieldDefaults": {
+    "create": {},
+    "done": {}
+  },
+  "sharedTags": ["agent-managed"],
   "agents": [
     {
       "key": "codex",

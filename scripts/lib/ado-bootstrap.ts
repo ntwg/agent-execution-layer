@@ -16,9 +16,7 @@ export function parseAzureDevOpsRemote(remoteUrl: string): AzureRemoteInfo | und
     };
   }
 
-  const sshMatch = remoteUrl.match(
-    /^git@ssh\.dev\.azure\.com:v3\/([^/]+)\/([^/]+)\/([^/?#]+)$/i,
-  );
+  const sshMatch = remoteUrl.match(/^git@ssh\.dev\.azure\.com:v3\/([^/]+)\/([^/]+)\/([^/?#]+)$/i);
   if (sshMatch) {
     return {
       organizationUrl: `https://dev.azure.com/${sshMatch[1]}`,

@@ -14,3 +14,5 @@ This project keeps a lightweight changelog.
 - Added init/doctor/smoke/bootstrap hardening and config validation.
 - Added machine-readable `--json` output across read/bootstrap and core write commands.
 - Added public-repo scaffolding: license, security policy, contribution guide, issue templates, CODEOWNERS, and release policy.
+- Renamed the internal CLI entrypoint to `scripts/ael.ts` and split command logic into focused modules.
+- Added Biome formatter/linter guardrails plus GitHub Actions CI for format, lint, build, and test validation.

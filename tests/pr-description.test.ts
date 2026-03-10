@@ -18,10 +18,7 @@ test('extractPlainSectionFromHtml handles richer Azure DevOps markup', () => {
     '</div>',
   ].join('');
 
-  assert.equal(
-    extractPlainSectionFromHtml(html, 'Human Summary'),
-    'Line one\nLine two & more',
-  );
+  assert.equal(extractPlainSectionFromHtml(html, 'Human Summary'), 'Line one\nLine two & more');
 });
 
 test('extractPlainSection falls back to markdown-style text blocks', () => {
@@ -44,6 +41,9 @@ test('renderPullRequestDescription never leaves Summary blank', () => {
   const description = renderPullRequestDescription(1821, '', 'Update bootstrap defaults');
 
   assert.match(description, /^AB#1821/m);
-  assert.match(description, /Summary\n- Human-readable summary was not provided on the work item\./m);
+  assert.match(
+    description,
+    /Summary\n- Human-readable summary was not provided on the work item\./m,
+  );
   assert.match(description, /Agent Context\n- Update bootstrap defaults/m);
 });

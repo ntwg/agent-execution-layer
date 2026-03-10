@@ -24,7 +24,7 @@ npm run ael:smoke
 npm run ael:validate-config
 npm run ael:status
 npm run ael:create -- --title "<task>" --human-summary "<goal>" --agent-context "<technical context>"
-npm run ael:start -- --id <id> --agent codex --assigned-to "<human>"
+npm run ael:start -- --id <id> --agent codex --assigned-to "<ado-email-or-id>"
 npm run ael:commit -- --id <id> --all --message "<subject>"
 npm run ael:pr -- --id <id> --ready
 npm run ael:done -- --id <id> --summary "<outcome>" --impact "<business value>" --pr "<pr-id>"
@@ -47,10 +47,12 @@ PR descriptions are emitted as sectioned plain text with real line breaks.
 
 Optional reviewer behavior:
 
-- `--reviewer "<name>"`
+- `--reviewer "<email-or-ado-id>"`
 - `--reviewer assigned`
 - `--no-reviewer`
 - `--required-reviewer`
+
+Assignee and reviewer identities are resolved through Azure DevOps before write operations run.
 
 PR tag behavior:
 
@@ -102,10 +104,18 @@ npm run ael:validate-config
 - Azure DevOps org/project/repository from the current `origin` remote when it points at Azure DevOps
 - repository ID from Azure DevOps
 - default branch from `origin/HEAD`
+- default area path from Azure Boards project nodes
+- default iteration path from Azure Boards project nodes
 
-`ael:doctor` verifies the local environment and config.
+`ael:doctor` verifies the local environment and config, including:
 
-`ael:smoke` adds read-only work item and PR queries on top of the doctor checks.
+- Azure CLI or PAT-backed Azure DevOps auth
+- configured default assignee identity resolution
+- target-branch policy visibility
+
+`ael:smoke` adds read-only work item and PR queries on top of the doctor checks, plus active PR merge-readiness inspection.
+
+If you need PAT-backed auth instead of `az login`, export `AEL_ADO_PAT` before running `ael` commands.
 
 For agent-safe parsing, these commands support `--json`:
 
@@ -150,6 +160,6 @@ The long-term downstream integration model is package-based:
 - use the `ael` bin entrypoint from downstream package scripts
 - keep repo-specific validation and escalation rules in the downstream repo
 
-See [docs/ADOPTING-AEL.md](/Users/nwagner/repos/agent-execution-layer/docs/ADOPTING-AEL.md) and `templates/downstream/*`.
+See [docs/ADOPTING-AEL.md](./ADOPTING-AEL.md) and `templates/downstream/*`.
 
 Repo-local `npm run ado:*` aliases still exist for compatibility, but `npm run ael:*` is the primary surface going forward.
