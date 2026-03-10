@@ -97,7 +97,8 @@ function queryWorkItems(
     '--wiql',
     wiql,
   ]) as AzQueryResult;
-  return (result.workItems ?? [])
+  const workItems = Array.isArray(result) ? result : (result.workItems ?? []);
+  return workItems
     .map((item) => item.id)
     .filter((value): value is number => Number.isFinite(value))
     .slice(0, limit);

@@ -1,8 +1,6 @@
 export type AgentKey = string;
 
-export interface AzQueryResult {
-  workItems?: Array<{ id?: number }>;
-}
+export type AzQueryResult = Array<{ id?: number }> | { workItems?: Array<{ id?: number }> };
 
 export interface WorkItemShowResult {
   id?: number;

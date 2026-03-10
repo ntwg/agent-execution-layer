@@ -124,25 +124,19 @@ if (args[0] === 'version') {
     },
   }));
 } else if (args[0] === 'boards' && args[1] === 'query') {
-  out(JSON.stringify({ workItems: [] }));
+  out(JSON.stringify([]));
 } else if (args[0] === 'boards' && args[1] === 'area' && args[2] === 'project' && args[3] === 'list') {
-  out(JSON.stringify([
-    {
-      path: '\\\\agent-execution-layer',
-      children: [
-        { path: '\\\\agent-execution-layer\\\\Platform' },
-      ],
-    },
-  ]));
+  out(JSON.stringify({
+    path: '\\\\agent-execution-layer\\\\Area',
+    children: null,
+  }));
 } else if (args[0] === 'boards' && args[1] === 'iteration' && args[2] === 'project' && args[3] === 'list') {
-  out(JSON.stringify([
-    {
-      path: '\\\\agent-execution-layer',
-      children: [
-        { path: '\\\\agent-execution-layer\\\\Sprint 1' },
-      ],
-    },
-  ]));
+  out(JSON.stringify({
+    path: '\\\\agent-execution-layer\\\\Iteration',
+    children: [
+      { path: '\\\\agent-execution-layer\\\\Iteration\\\\Sprint 1' },
+    ],
+  }));
 } else if (args[0] === 'repos' && args[1] === 'policy' && args[2] === 'list') {
   out(JSON.stringify([
     {
@@ -220,8 +214,8 @@ test('init writes a local generated config and doctor/smoke pass with stubs', (t
   };
   assert.equal(config.repositoryId, TEST_REPOSITORY_ID);
   assert.equal(config.defaultBranch, 'main');
-  assert.equal(config.defaultAreaPath, '\\agent-execution-layer');
-  assert.equal(config.defaultIterationPath, '\\agent-execution-layer');
+  assert.equal(config.defaultAreaPath, 'agent-execution-layer');
+  assert.equal(config.defaultIterationPath, 'agent-execution-layer');
   assert.equal(config.defaultAgent, 'codex');
 
   const doctorOutput = runCli(['doctor'], workspace, env);
@@ -349,4 +343,86 @@ test('doctor passes with PAT auth fallback and no azure login', (t) => {
         check.label === 'configured identities' && check.ok && /validated/.test(check.detail),
     ),
   );
+});
+
+test('init --force refreshes stale board path defaults', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const binDir = installStubCommands(workspace);
+  const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
+  writeFileSync(
+    configPath,
+    `${JSON.stringify(
+      {
+        configVersion: 3,
+        enabled: true,
+        organizationUrl: 'https://dev.azure.com/example-org',
+        project: 'agent-execution-layer',
+        repositoryId: TEST_REPOSITORY_ID,
+        defaultBranch: 'main',
+        defaultAgent: 'codex',
+        defaultWorkItemType: 'Task',
+        defaultAreaPath: '\\agent-execution-layer\\Area',
+        defaultIterationPath: '\\agent-execution-layer\\Iteration',
+        workItemFieldDefaults: {
+          create: {},
+          done: {},
+        },
+        sharedTags: ['agent-managed'],
+        agents: [
+          {
+            key: 'codex',
+            tag: 'agent:codex',
+            branchPrefix: 'codex',
+            defaultAssignee: '',
+          },
+        ],
+        stateMap: {
+          new: 'New',
+          active: 'Active',
+          done: 'Closed',
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const env = {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    AEL_TEST_WORKSPACE: workspace,
+    AEL_TEST_REMOTE:
+      'https://dev.azure.com/example-org/agent-execution-layer/_git/agent-execution-layer',
+    AEL_TEST_BRANCH: 'main',
+  };
+
+  runCli(
+    [
+      'init',
+      '--organization-url',
+      'https://dev.azure.com/example-org',
+      '--project',
+      'agent-execution-layer',
+      '--repository',
+      'agent-execution-layer',
+      '--default-branch',
+      'main',
+      '--agents',
+      'codex',
+      '--default-agent',
+      'codex',
+      '--force',
+    ],
+    workspace,
+    env,
+  );
+
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+    defaultAreaPath: string;
+    defaultIterationPath: string;
+  };
+  assert.equal(config.defaultAreaPath, 'agent-execution-layer');
+  assert.equal(config.defaultIterationPath, 'agent-execution-layer');
 });

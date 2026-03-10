@@ -149,6 +149,15 @@ function normalizeBoardPathCandidate(path: string): string {
 function selectDefaultBoardPath(paths: string[], project: string): string | undefined {
   if (paths.length === 0) return undefined;
   const normalizedProject = project.replaceAll('/', '\\').trim().toLowerCase();
+  const rootProjectName = project.replaceAll('/', '\\').trim();
+  const rootedProjectPrefix = `\\${normalizedProject}\\`;
+  if (
+    paths.some((path) =>
+      normalizeBoardPathCandidate(path).toLowerCase().startsWith(rootedProjectPrefix),
+    )
+  ) {
+    return rootProjectName;
+  }
   const exact = paths.find(
     (path) => normalizeBoardPathCandidate(path).toLowerCase() === normalizedProject,
   );
@@ -589,6 +598,7 @@ export function commandValidateConfig(args: string[] = []): void {
 }
 
 export async function commandInit(args: string[]): Promise<void> {
+  const forceOverwrite = hasFlag(args, '--force');
   const existingConfig = existsSync(CONFIG_PATH);
   const targetConfigPath = CONFIG_INIT_PATH;
   const targetConfigExists = existsSync(targetConfigPath);
@@ -600,7 +610,7 @@ export async function commandInit(args: string[]): Promise<void> {
       ? existingInspection.config
       : undefined;
 
-  if (targetConfigExists && !hasFlag(args, '--force')) {
+  if (targetConfigExists && !forceOverwrite) {
     if (!process.stdin.isTTY) {
       fail(`config already exists at ${targetConfigPath}. Re-run with --force to overwrite it.`);
     }
@@ -634,9 +644,11 @@ export async function commandInit(args: string[]): Promise<void> {
     existingValidConfig?.defaultBranch ??
     detectedDefaultBranch;
   let defaultAreaPath =
-    parseArgValue(args, '--area-path')?.trim() ?? existingValidConfig?.defaultAreaPath;
+    parseArgValue(args, '--area-path')?.trim() ??
+    (forceOverwrite ? undefined : existingValidConfig?.defaultAreaPath);
   let defaultIterationPath =
-    parseArgValue(args, '--iteration-path')?.trim() ?? existingValidConfig?.defaultIterationPath;
+    parseArgValue(args, '--iteration-path')?.trim() ??
+    (forceOverwrite ? undefined : existingValidConfig?.defaultIterationPath);
   let agentKeys = parseAgentKeyList(parseArgValue(args, '--agents'));
   if (agentKeys.length === 0) {
     agentKeys =

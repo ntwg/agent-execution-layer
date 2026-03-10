@@ -302,7 +302,7 @@ if (args[0] === 'account' && args[1] === 'get-access-token') {
     const rightChanged = Date.parse(String(right.fields['System.ChangedDate'] ?? '1970-01-01T00:00:00.000Z'));
     return rightChanged - leftChanged;
   }).map(item => ({ id: item.id }));
-  outJson({ workItems: matches });
+  outJson(matches);
 } else if (args[0] === 'boards' && args[1] === 'work-item' && args[2] === 'relation' && args[3] === 'add') {
   const id = Number(value('--id'));
   const item = ensureItem(state, id);
