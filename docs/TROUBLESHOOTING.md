@@ -69,6 +69,8 @@ az extension add --name azure-devops
 ael init --organization-url <url> --project <project> --repository <repo> --default-branch main
 ```
 
+If the machine needs an explicit platform override, add `--platform windows`, `--platform mac`, or `--platform linux`.
+
 ## `ael doctor` fails on Azure auth or repo access
 
 Typical causes:
@@ -83,6 +85,20 @@ Recommended fix:
 2. if using PAT auth, confirm `AEL_ADO_PAT` is exported in the current shell
 3. verify the account can open the target org/project/repo in Azure DevOps
 4. re-run `ael doctor --json`
+
+## `ael report` or `ael audit` behaves differently on Windows or Mac
+
+Typical causes:
+
+- the local config is still on the wrong runtime platform
+- the repo is using Azure CLI auth, so some REST-only repair features are limited
+
+Recommended fix:
+
+1. run `ael status` and check `runtime platform`
+2. if needed, re-run `ael init --platform windows`, `ael init --platform mac`, or `ael init --platform linux`
+3. if you need PR label write-back or existing work-item comment repair, export `AEL_ADO_PAT`
+4. re-run `ael report` or `ael audit`
 
 ## `ael uninstall` leaves files or scripts behind
 

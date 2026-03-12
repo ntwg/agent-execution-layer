@@ -1,5 +1,5 @@
 {
-  "configVersion": 3,
+  "configVersion": 4,
   "enabled": true,
   "organizationUrl": "https://dev.azure.com/your-org",
   "project": "your-project",
@@ -42,5 +42,8 @@
   "reportDefaults": {
     "staleDays": 7,
     "recentDays": 7
+  },
+  "runtime": {
+    "platform": "auto"
   }
 }

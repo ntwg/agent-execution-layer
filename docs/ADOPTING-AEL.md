@@ -79,8 +79,9 @@ Minimum downstream setup:
 4. fill out `.ael/project-contract.md` with repo-specific validation and escalation rules
 5. edit `.ael/settings.json` if you want custom backlog-create/backlog-polish prompts
 6. run `npx ael init` or your package-manager equivalent
-7. run `npx ael doctor` or your package-manager equivalent
-8. run `npx ael status` or your package-manager equivalent
+7. if the machine needs it, re-run `npx ael init --platform windows|mac|linux`
+8. run `npx ael doctor` or your package-manager equivalent
+9. run `npx ael status` or your package-manager equivalent
 
 If the repo prefers `npm run ael:*` scripts, use `ael install --with-scripts` instead.
 If the repo already manages its own root `AGENTS.md`, use `ael install --no-root-agents` and point that existing file at `.ael/agent-guide.md`.
@@ -132,6 +133,12 @@ For that to work, the downstream repo must clearly define:
 - creating `.ael/settings.json`
 - keeping `.ael/config.local.json` ignored through `.ael/.gitignore` while the committed guide and contract remain visible
 
+Platform note:
+
+- `.ael/config.local.json` now carries a machine-local `runtime.platform` value
+- leave it as `auto` in most repos
+- set it to `windows`, `mac`, or `linux` only when a machine needs an explicit override
+
 See [examples/downstream-minimal](../examples/downstream-minimal) for a copyable minimal layout after install.
 See [examples/downstream-with-scripts](../examples/downstream-with-scripts) for the script-shim variant.
 
@@ -177,6 +184,7 @@ Use [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for the common failure cases
 - `ael doctor --adoption` failing after install
 - `ael init` not detecting the Azure DevOps target
 - Azure auth or repo-access failures during `doctor`
+- Windows or Mac command-routing issues
 - `ael uninstall` preserving customized files or scripts
 
 ## Recommended Human Supervision Policy

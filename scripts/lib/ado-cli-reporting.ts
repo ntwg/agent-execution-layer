@@ -27,6 +27,7 @@ import {
   printJson,
   replaceWorkItemTagsExact,
   runCommand,
+  usesPatAuth,
   uniqueTags,
   wantsJson,
 } from './ado-cli-runtime.js';
@@ -353,8 +354,15 @@ export function commandAudit(config: AgentExecutionConfig, args: string[]): void
   if (!Number.isFinite(staleDays) || staleDays < 0) fail(`invalid --stale-days "${staleDaysRaw}".`);
 
   const findings: AuditFinding[] = [];
+  const warnings: string[] = [];
   const touchedPrIds = new Set<number>();
   const activePullRequests = listPullRequests(config, 'active');
+
+  if (!usesPatAuth()) {
+    warnings.push(
+      'Azure CLI auth is active. Audit can still read work items and PRs, but PR label write-back and existing comment repair stay limited without a PAT.',
+    );
+  }
 
   for (const id of workItemIds) {
     const item = getWorkItem(config, id);
@@ -523,6 +531,7 @@ export function commandAudit(config: AgentExecutionConfig, args: string[]): void
         prTags: repairPrTags,
         prLinks: repairPrLinks,
       },
+      warnings,
       findingCount: findings.length,
       findingCounts: {
         warn: findings.filter((finding) => finding.level === 'warn').length,
@@ -549,6 +558,9 @@ export function commandAudit(config: AgentExecutionConfig, args: string[]): void
             .join(', ') || 'off'
     }`,
   );
+  for (const warning of warnings) {
+    console.log(`Warning: ${warning}`);
+  }
   printAuditFindings(findings);
 }
 

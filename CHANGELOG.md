@@ -10,7 +10,10 @@ This project keeps a lightweight changelog.
 
 ## Unreleased
 
-- No unreleased changes yet.
+- Fixed Windows Azure CLI command routing so WIQL operators like `<>` no longer break `report`, `audit`, and other query-heavy commands.
+- Reduced dependence on raw Azure DevOps REST calls for normal read/write flows, so `report`, `audit`, and `retag` work cleanly with standard `az login` auth.
+- Added local `runtime.platform` config support plus `ael init --platform ...` to pin Windows, Mac, or Linux behavior when auto-detect is not enough.
+- Documented the current auth tradeoff: core workflows work with Azure CLI login, while PR label write-back and existing work item comment repair are still strongest with a PAT.
 
 ## 0.2.0 - 2026-03-10
 

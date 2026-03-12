@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 export type ReviewerMode = 'off' | 'assigned';
 export type PullRequestTagMode = 'non-agent' | 'all';
 export type WorkItemFieldValue = string | number | boolean;
+export type RuntimePlatform = 'auto' | 'windows' | 'mac' | 'linux';
 
 export interface AgentExecutionConfig {
   configVersion: number;
@@ -36,6 +37,9 @@ export interface AgentExecutionConfig {
   reportDefaults: {
     staleDays: number;
     recentDays: number;
+  };
+  runtime: {
+    platform: RuntimePlatform;
   };
 }
 
@@ -81,7 +85,10 @@ export const DEFAULT_PR_DEFAULTS = {
   syncTagMode: 'non-agent' as PullRequestTagMode,
 };
 
-export const DEFAULT_CONFIG_VERSION = 3;
+export const DEFAULT_CONFIG_VERSION = 4;
+export const DEFAULT_RUNTIME_SETTINGS = {
+  platform: 'auto' as RuntimePlatform,
+};
 
 export const DEFAULT_AGENT_DEFINITIONS: AgentDefinition[] = [
   {
@@ -122,6 +129,7 @@ const CONFIG_TOP_LEVEL_KEYS = new Set([
   'stateMap',
   'prDefaults',
   'reportDefaults',
+  'runtime',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -228,6 +236,25 @@ function normalizeConfig(raw: Record<string, unknown>): AgentExecutionConfig {
         ? Number(parsed.reportDefaults?.recentDays)
         : DEFAULT_REPORT_DEFAULTS.recentDays,
     },
+    runtime: normalizeRuntimeSettings(raw.runtime),
+  };
+}
+
+function normalizeRuntimePlatformValue(value: unknown): RuntimePlatform {
+  if (typeof value !== 'string') return DEFAULT_RUNTIME_SETTINGS.platform;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'windows' || normalized === 'mac' || normalized === 'linux') {
+    return normalized;
+  }
+  return DEFAULT_RUNTIME_SETTINGS.platform;
+}
+
+function normalizeRuntimeSettings(raw: unknown): { platform: RuntimePlatform } {
+  if (!isRecord(raw)) {
+    return { ...DEFAULT_RUNTIME_SETTINGS };
+  }
+  return {
+    platform: normalizeRuntimePlatformValue(raw.platform),
   };
 }
 
@@ -538,6 +565,36 @@ function validateReportDefaults(
   }
 }
 
+function validateRuntimeSettings(
+  root: Record<string, unknown>,
+  errors: string[],
+  warnings: string[],
+): void {
+  const value = root.runtime;
+  if (value === undefined) {
+    return;
+  }
+  if (!isRecord(value)) {
+    errors.push('"runtime" must be an object.');
+    return;
+  }
+
+  if (
+    value.platform !== undefined &&
+    value.platform !== 'auto' &&
+    value.platform !== 'windows' &&
+    value.platform !== 'mac' &&
+    value.platform !== 'linux'
+  ) {
+    errors.push('"runtime.platform" must be "auto", "windows", "mac", or "linux".');
+  }
+
+  const unknownKeys = Object.keys(value).filter((key) => !['platform'].includes(key));
+  if (unknownKeys.length > 0) {
+    warnings.push(`"runtime" has unrecognized keys: ${unknownKeys.join(', ')}.`);
+  }
+}
+
 export function discoverConfigPath(
   cwd = process.cwd(),
   envPath = process.env.AGENT_EXECUTION_CONFIG,
@@ -679,6 +736,7 @@ export function inspectConfigAtPath(
     validateStateMap(parsed, errors, warnings);
     validatePrDefaults(parsed, errors, warnings);
     validateReportDefaults(parsed, errors, warnings);
+    validateRuntimeSettings(parsed, errors, warnings);
 
     const normalized = normalizeConfig(parsed);
     if (normalized.agents.length === 0) {
@@ -720,4 +778,15 @@ export function loadConfigFromPath(
 export function saveConfigToPath(configPath: string, config: AgentExecutionConfig): void {
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+}
+
+export function readRuntimePlatformFromPath(configPath: string): RuntimePlatform {
+  try {
+    if (!existsSync(configPath)) return DEFAULT_RUNTIME_SETTINGS.platform;
+    const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as unknown;
+    if (!isRecord(parsed)) return DEFAULT_RUNTIME_SETTINGS.platform;
+    return normalizeRuntimeSettings(parsed.runtime).platform;
+  } catch {
+    return DEFAULT_RUNTIME_SETTINGS.platform;
+  }
 }

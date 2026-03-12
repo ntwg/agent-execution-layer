@@ -7,10 +7,12 @@ import {
   inspectConfigAtPath,
   loadConfigFromPath,
   normalizeAgentKey,
+  readRuntimePlatformFromPath,
   saveConfigToPath,
   type AgentDefinition,
   type AgentExecutionConfig,
   type ConfigInspectionResult,
+  type RuntimePlatform,
   type WorkItemFieldValue,
 } from './config.js';
 import type { AgentKey, AzureIdentity, CommandResult } from './ado-cli-types.js';
@@ -239,7 +241,7 @@ export function resolveCommandInvocation(
 }
 
 function escapeWindowsShellArg(arg: string): string {
-  return arg.replaceAll(/[()%!^<>&|]/g, (match) => `^${match}`);
+  return arg.replaceAll(/[()%!^&|]/g, (match) => `^${match}`);
 }
 
 function resolveCommandOverride(
@@ -276,7 +278,7 @@ function resolveCommandOverride(
 export function runCommand(args: string[]): CommandResult {
   const env = buildCommandEnv();
   try {
-    const invocation = resolveCommandInvocation(args, process.platform, env);
+    const invocation = resolveCommandInvocation(args, resolveExecutionPlatform(env), env);
     const stdout = execFileSync(invocation.command, invocation.args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -411,31 +413,14 @@ export function replaceWorkItemTagsExact(
   id: number,
   tags: string[],
 ): void {
-  const url =
-    `${config.organizationUrl}/${encodeURIComponent(config.project)}` +
-    `/_apis/wit/workitems/${id}?api-version=7.1`;
-  const payload = JSON.stringify([
-    {
-      op: 'replace',
-      path: '/fields/System.Tags',
-      value: tags.join(';'),
-    },
-  ]);
-
-  shell([
-    'curl',
-    '-sS',
-    '-o',
-    '/dev/null',
-    '-X',
-    'PATCH',
-    '-H',
-    getDevOpsAuthorizationHeader(),
-    '-H',
-    'Content-Type: application/json-patch+json',
-    '--data',
-    payload,
-    url,
+  azJson(config, [
+    'boards',
+    'work-item',
+    'update',
+    '--id',
+    String(id),
+    '--fields',
+    `System.Tags=${tags.join(';')}`,
   ]);
 }
 
@@ -649,4 +634,24 @@ export function summarizeCommandFailure(result: CommandResult): string {
 
 export function printCheck(label: string, ok: boolean, detail: string): void {
   console.log(`- ${ok ? 'PASS' : 'FAIL'} ${label}: ${detail}`);
+}
+
+function resolveExecutionPlatform(
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.Platform {
+  const configured = normalizeRuntimePlatform(
+    env.AEL_PLATFORM?.trim() || readRuntimePlatformFromPath(CONFIG_PATH),
+  );
+  if (configured === 'windows') return 'win32';
+  if (configured === 'mac') return 'darwin';
+  if (configured === 'linux') return 'linux';
+  return process.platform;
+}
+
+function normalizeRuntimePlatform(value: string | RuntimePlatform | undefined): RuntimePlatform {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === 'windows' || normalized === 'mac' || normalized === 'linux') {
+    return normalized;
+  }
+  return 'auto';
 }
