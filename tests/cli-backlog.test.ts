@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_CONFIG_FILENAME, DEFAULT_SETTINGS_FILENAME } from '../scripts/lib/config.js';
+import { execLocalBin, normalizeSlashes } from './test-helpers.js';
 
 const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
-const TSX_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const CLI_PATH = join(REPO_ROOT, 'scripts', 'ael.ts');
 
 function makeTempDir(): string {
@@ -16,7 +15,7 @@ function makeTempDir(): string {
 }
 
 function runCli(args: string[], workspace: string): string {
-  return execFileSync(TSX_BIN, [CLI_PATH, ...args], {
+  return execLocalBin(REPO_ROOT, 'tsx', [CLI_PATH, ...args], {
     cwd: workspace,
     env: process.env,
     encoding: 'utf8',
@@ -151,7 +150,9 @@ test('backlog-polish falls back to bundled defaults when settings are missing', 
 
   assert.equal(result.ok, true);
   assert.equal(result.settingsSource, 'template');
-  assert.ok(result.warnings.some((warning) => warning.includes('.ael/settings.json')));
+  assert.ok(
+    result.warnings.some((warning) => normalizeSlashes(warning).includes('.ael/settings.json')),
+  );
   assert.match(result.prompt, /Improve the clarity, sequencing, metadata, and execution-readiness/);
   assert.match(result.prompt, /fallback-backlog-repo/);
 });

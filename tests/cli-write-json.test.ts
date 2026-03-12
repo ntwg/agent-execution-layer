@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -19,22 +17,20 @@ import {
   DEFAULT_PR_DEFAULTS,
   DEFAULT_REPORT_DEFAULTS,
 } from '../scripts/lib/config.js';
+import { execLocalBin, prependPathEntry, writeCommandStub } from './test-helpers.js';
 
 const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
-const TSX_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const CLI_PATH = join(REPO_ROOT, 'scripts', 'ael.ts');
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), 'ael-write-json-test-'));
 }
 
-function writeExecutable(path: string, body: string): void {
-  writeFileSync(path, body, 'utf8');
-  chmodSync(path, 0o755);
-}
-
 function installStubCommands(workspace: string): {
   binDir: string;
+  gitCommandPath: string;
+  azCommandPath: string;
+  curlCommandPath: string;
   gitStatePath: string;
   azStatePath: string;
 } {
@@ -43,8 +39,9 @@ function installStubCommands(workspace: string): {
   const azStatePath = join(workspace, 'az-state.json');
   mkdirSync(binDir, { recursive: true });
 
-  writeExecutable(
-    join(binDir, 'git'),
+  const gitCommandPath = writeCommandStub(
+    binDir,
+    'git',
     `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -132,8 +129,9 @@ if (args[0] === 'branch' && args[1] === '--show-current') {
 `,
   );
 
-  writeExecutable(
-    join(binDir, 'az'),
+  const azCommandPath = writeCommandStub(
+    binDir,
+    'az',
     `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -392,8 +390,9 @@ if (args[0] === 'account' && args[1] === 'get-access-token') {
 `,
   );
 
-  writeExecutable(
-    join(binDir, 'curl'),
+  const curlCommandPath = writeCommandStub(
+    binDir,
+    'curl',
     `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -513,7 +512,14 @@ if (method === 'GET' && parsed.pathname.includes('/_apis/wit/workitems')) {
 `,
   );
 
-  return { binDir, gitStatePath, azStatePath };
+  return {
+    binDir,
+    gitCommandPath,
+    azCommandPath,
+    curlCommandPath,
+    gitStatePath,
+    azStatePath,
+  };
 }
 
 function writeConfig(workspace: string): void {
@@ -570,7 +576,7 @@ function writeAzState(path: string, value: unknown): void {
 }
 
 function runCli(args: string[], workspace: string, extraEnv: Record<string, string>): string {
-  return execFileSync(TSX_BIN, [CLI_PATH, ...args], {
+  return execLocalBin(REPO_ROOT, 'tsx', [CLI_PATH, ...args], {
     cwd: workspace,
     env: {
       ...process.env,
@@ -584,11 +590,15 @@ test('write-side commands emit structured json', (t) => {
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
 
-  const { binDir, gitStatePath, azStatePath } = installStubCommands(workspace);
+  const { binDir, gitCommandPath, azCommandPath, curlCommandPath, gitStatePath, azStatePath } =
+    installStubCommands(workspace);
   writeConfig(workspace);
 
   const env = {
-    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    PATH: prependPathEntry(binDir),
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
+    AEL_CMD_CURL: curlCommandPath,
     AEL_WRITE_GIT_STATE: gitStatePath,
     AEL_WRITE_AZ_STATE: azStatePath,
   };
@@ -868,7 +878,8 @@ test('report, audit, and retag emit structured json', (t) => {
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
 
-  const { binDir, gitStatePath, azStatePath } = installStubCommands(workspace);
+  const { binDir, gitCommandPath, azCommandPath, curlCommandPath, gitStatePath, azStatePath } =
+    installStubCommands(workspace);
   writeConfig(workspace);
   writeAzState(azStatePath, {
     nextWorkItemId: 104,
@@ -976,7 +987,10 @@ test('report, audit, and retag emit structured json', (t) => {
   });
 
   const env = {
-    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    PATH: prependPathEntry(binDir),
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
+    AEL_CMD_CURL: curlCommandPath,
     AEL_WRITE_GIT_STATE: gitStatePath,
     AEL_WRITE_AZ_STATE: azStatePath,
   };

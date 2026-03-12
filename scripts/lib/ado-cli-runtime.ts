@@ -28,6 +28,7 @@ export const TAG_ALIAS_MAP: Record<string, string> = {
   coverage: 'coverage-policy',
   tokens: 'token-efficiency',
 };
+const WINDOWS_SHELL_COMMANDS = new Set(['az', 'git', 'curl']);
 
 export function fail(message: string): never {
   console.error(`agent-execution: ${message}`);
@@ -220,11 +221,15 @@ export function normalizeAgent(
 export function resolveCommandInvocation(
   args: string[],
   platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
 ): { command: string; args: string[] } {
-  if (platform === 'win32' && args[0]?.toLowerCase() === 'az') {
+  const override = resolveCommandOverride(args, platform, env);
+  if (override) return override;
+
+  if (platform === 'win32' && WINDOWS_SHELL_COMMANDS.has(args[0]?.toLowerCase() ?? '')) {
     return {
       command: 'cmd.exe',
-      args: ['/d', '/s', '/c', ...args],
+      args: ['/d', '/s', '/c', ...args.map(escapeWindowsShellArg)],
     };
   }
   return {
@@ -233,13 +238,49 @@ export function resolveCommandInvocation(
   };
 }
 
+function escapeWindowsShellArg(arg: string): string {
+  return arg.replaceAll(/[()%!^<>&|]/g, (match) => `^${match}`);
+}
+
+function resolveCommandOverride(
+  args: string[],
+  platform: string,
+  env: NodeJS.ProcessEnv,
+): { command: string; args: string[] } | undefined {
+  const rawCommand = args[0]?.trim();
+  if (!rawCommand) return undefined;
+
+  const override = env[`AEL_CMD_${rawCommand.toUpperCase()}`]?.trim();
+  if (!override) return undefined;
+
+  if (/\.(?:[cm]?js)$/i.test(override)) {
+    return {
+      command: process.execPath,
+      args: [override, ...args.slice(1)],
+    };
+  }
+
+  if (platform === 'win32' && /\.(?:cmd|bat)$/i.test(override)) {
+    return {
+      command: 'cmd.exe',
+      args: ['/d', '/s', '/c', override, ...args.slice(1).map(escapeWindowsShellArg)],
+    };
+  }
+
+  return {
+    command: override,
+    args: args.slice(1),
+  };
+}
+
 export function runCommand(args: string[]): CommandResult {
+  const env = buildCommandEnv();
   try {
-    const invocation = resolveCommandInvocation(args);
+    const invocation = resolveCommandInvocation(args, process.platform, env);
     const stdout = execFileSync(invocation.command, invocation.args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: buildCommandEnv(),
+      env,
     });
     return {
       ok: true,
