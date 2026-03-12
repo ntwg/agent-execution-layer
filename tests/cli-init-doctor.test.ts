@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -11,12 +10,11 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import { DEFAULT_CONFIG_FILENAME } from '../scripts/lib/config.js';
+import { execLocalBin, normalizeSlashes, prependPathEntry, writeCommandStub } from './test-helpers.js';
 
 const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
-const TSX_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const CLI_PATH = join(REPO_ROOT, 'scripts', 'ael.ts');
 const TEST_REPOSITORY_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -24,17 +22,17 @@ function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), 'ael-cli-test-'));
 }
 
-function writeExecutable(path: string, body: string): void {
-  writeFileSync(path, body, 'utf8');
-  chmodSync(path, 0o755);
-}
-
-function installStubCommands(workspace: string): string {
+function installStubCommands(workspace: string): {
+  binDir: string;
+  gitCommandPath: string;
+  azCommandPath: string;
+} {
   const binDir = join(workspace, 'bin');
   mkdirSync(binDir, { recursive: true });
 
-  writeExecutable(
-    join(binDir, 'git'),
+  const gitCommandPath = writeCommandStub(
+    binDir,
+    'git',
     `#!/usr/bin/env node
 const args = process.argv.slice(2);
 const workspace = process.env.AEL_TEST_WORKSPACE;
@@ -66,8 +64,9 @@ if (args[0] === 'rev-parse' && args[1] === '--show-toplevel') {
 `,
   );
 
-  writeExecutable(
-    join(binDir, 'az'),
+  const azCommandPath = writeCommandStub(
+    binDir,
+    'az',
     `#!/usr/bin/env node
 const args = process.argv.slice(2);
 
@@ -156,11 +155,15 @@ if (args[0] === 'version') {
 `,
   );
 
-  return binDir;
+  return {
+    binDir,
+    gitCommandPath,
+    azCommandPath,
+  };
 }
 
 function runCli(args: string[], workspace: string, extraEnv: Record<string, string>): string {
-  return execFileSync(TSX_BIN, [CLI_PATH, ...args], {
+  return execLocalBin(REPO_ROOT, 'tsx', [CLI_PATH, ...args], {
     cwd: workspace,
     env: {
       ...process.env,
@@ -174,9 +177,11 @@ test('init writes a local generated config and doctor/smoke pass with stubs', (t
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
 
-  const binDir = installStubCommands(workspace);
+  const { binDir, gitCommandPath, azCommandPath } = installStubCommands(workspace);
   const env = {
-    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    PATH: prependPathEntry(binDir),
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
     AEL_TEST_WORKSPACE: workspace,
     AEL_TEST_REMOTE:
       'https://dev.azure.com/example-org/agent-execution-layer/_git/agent-execution-layer',
@@ -205,7 +210,7 @@ test('init writes a local generated config and doctor/smoke pass with stubs', (t
 
   const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
   assert.ok(existsSync(configPath));
-  assert.match(initOutput, /config: .*\.ael\/config\.local\.json/);
+  assert.match(normalizeSlashes(initOutput), /config: .*\.ael\/config\.local\.json/);
 
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
     repositoryId: string;
@@ -274,7 +279,7 @@ test('doctor passes with PAT auth fallback and no azure login', (t) => {
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
 
-  const binDir = installStubCommands(workspace);
+  const { binDir, gitCommandPath, azCommandPath } = installStubCommands(workspace);
   const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(
@@ -317,7 +322,9 @@ test('doctor passes with PAT auth fallback and no azure login', (t) => {
   );
 
   const env = {
-    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    PATH: prependPathEntry(binDir),
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
     AEL_TEST_WORKSPACE: workspace,
     AEL_TEST_REMOTE:
       'https://dev.azure.com/example-org/agent-execution-layer/_git/agent-execution-layer',
@@ -350,7 +357,7 @@ test('init --force refreshes stale board path defaults', (t) => {
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
 
-  const binDir = installStubCommands(workspace);
+  const { binDir, gitCommandPath, azCommandPath } = installStubCommands(workspace);
   const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(
@@ -393,7 +400,9 @@ test('init --force refreshes stale board path defaults', (t) => {
   );
 
   const env = {
-    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    PATH: prependPathEntry(binDir),
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
     AEL_TEST_WORKSPACE: workspace,
     AEL_TEST_REMOTE:
       'https://dev.azure.com/example-org/agent-execution-layer/_git/agent-execution-layer',
@@ -493,5 +502,5 @@ test('doctor --adoption fails when external entrypoint instructions are still mi
       (check) => check.label === 'ael external entrypoint' && check.ok === false,
     ),
   );
-  assert.match(doctorJson.nextSteps[0] ?? '', /docs\/TEAM\.md/);
+  assert.match(normalizeSlashes(doctorJson.nextSteps[0] ?? ''), /docs\/TEAM\.md/);
 });

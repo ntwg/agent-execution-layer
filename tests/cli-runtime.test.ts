@@ -9,10 +9,10 @@ test('resolveCommandInvocation keeps non-Windows commands unchanged', () => {
   });
 });
 
-test('resolveCommandInvocation keeps non-az Windows commands unchanged', () => {
-  assert.deepEqual(resolveCommandInvocation(['git', 'status'], 'win32'), {
-    command: 'git',
-    args: ['status'],
+test('resolveCommandInvocation keeps unrelated Windows commands unchanged', () => {
+  assert.deepEqual(resolveCommandInvocation(['node', '--version'], 'win32'), {
+    command: 'node',
+    args: ['--version'],
   });
 });
 
@@ -21,4 +21,33 @@ test('resolveCommandInvocation routes Windows az commands through cmd.exe', () =
     command: 'cmd.exe',
     args: ['/d', '/s', '/c', 'az', 'account', 'show', '-o', 'json'],
   });
+});
+
+test('resolveCommandInvocation routes Windows git commands through cmd.exe', () => {
+  assert.deepEqual(resolveCommandInvocation(['git', 'status'], 'win32'), {
+    command: 'cmd.exe',
+    args: ['/d', '/s', '/c', 'git', 'status'],
+  });
+});
+
+test('resolveCommandInvocation routes Windows curl commands through cmd.exe', () => {
+  assert.deepEqual(
+    resolveCommandInvocation(['curl', '-sS', 'https://example.com?a=1&b=2'], 'win32'),
+    {
+      command: 'cmd.exe',
+      args: ['/d', '/s', '/c', 'curl', '-sS', 'https://example.com?a=1^&b=2'],
+    },
+  );
+});
+
+test('resolveCommandInvocation honors JavaScript command overrides', () => {
+  assert.deepEqual(
+    resolveCommandInvocation(['git', 'status'], 'win32', {
+      AEL_CMD_GIT: 'C:\\stubs\\git.js',
+    }),
+    {
+      command: process.execPath,
+      args: ['C:\\stubs\\git.js', 'status'],
+    },
+  );
 });

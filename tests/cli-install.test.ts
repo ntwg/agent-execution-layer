@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { execLocalBin, normalizeSlashes, pathListIncludesSuffix } from './test-helpers.js';
 
 const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
-const TSX_BIN = join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const CLI_PATH = join(REPO_ROOT, 'scripts', 'ael.ts');
 
 function makeTempDir(): string {
@@ -15,7 +14,7 @@ function makeTempDir(): string {
 }
 
 function runCli(args: string[], workspace: string): string {
-  return execFileSync(TSX_BIN, [CLI_PATH, ...args], {
+  return execLocalBin(REPO_ROOT, 'tsx', [CLI_PATH, ...args], {
     cwd: workspace,
     env: process.env,
     encoding: 'utf8',
@@ -60,12 +59,12 @@ test('install writes downstream repo contract files without mutating package.jso
   assert.equal(summary.rootInstructions, 'managed');
   assert.equal(summary.rootInstructionsPath, 'AGENTS.md');
   assert.equal(summary.scripts.added.length, 0);
-  assert.ok(summary.files.updated.some((path) => path.endsWith('/AGENTS.md')));
-  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/.gitignore')));
-  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/agent-guide.md')));
-  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/install.json')));
-  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/project-contract.md')));
-  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/settings.json')));
+  assert.ok(pathListIncludesSuffix(summary.files.updated, 'AGENTS.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/.gitignore'));
+  assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/agent-guide.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/install.json'));
+  assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/project-contract.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/settings.json'));
   assert.deepEqual(summary.nextSteps.slice(-2), ['npx ael init', 'npx ael doctor']);
 
   const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
@@ -284,10 +283,10 @@ test('install --dry-run previews downstream changes without writing files', (t) 
 
   assert.equal(summary.ok, true);
   assert.equal(summary.dryRun, true);
-  assert.ok(summary.files.created.some((path) => path.endsWith('/AGENTS.md')));
-  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/agent-guide.md')));
-  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/project-contract.md')));
-  assert.ok(summary.files.created.some((path) => path.endsWith('/.ael/settings.json')));
+  assert.ok(pathListIncludesSuffix(summary.files.created, 'AGENTS.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/agent-guide.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/project-contract.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/settings.json'));
   assert.equal(existsSync(join(workspace, 'AGENTS.md')), false);
   assert.equal(existsSync(join(workspace, '.ael', 'agent-guide.md')), false);
   assert.equal(existsSync(join(workspace, '.ael', 'project-contract.md')), false);
@@ -317,10 +316,7 @@ test('install --entrypoint-file writes the root discovery stub to a custom file'
   assert.equal(summary.ok, true);
   assert.equal(summary.rootInstructions, 'managed');
   assert.equal(summary.rootInstructionsPath, 'docs/WORKFLOW.md');
-  assert.equal(
-    summary.files.created.some((path) => path.endsWith('/docs/WORKFLOW.md')),
-    true,
-  );
+  assert.equal(pathListIncludesSuffix(summary.files.created, 'docs/WORKFLOW.md'), true);
   assert.equal(existsSync(join(workspace, 'AGENTS.md')), false);
 
   const entrypoint = readFileSync(join(workspace, 'docs', 'WORKFLOW.md'), 'utf8');
@@ -370,15 +366,9 @@ test('install --no-root-agents leaves existing root instructions untouched', (t)
   assert.equal(summary.mode, 'minimal');
   assert.equal(summary.rootInstructions, 'external');
   assert.equal(summary.rootInstructionsPath, 'AGENTS.md');
-  assert.equal(
-    summary.files.updated.some((path) => path.endsWith('/AGENTS.md')),
-    false,
-  );
-  assert.equal(
-    summary.files.created.some((path) => path.endsWith('/AGENTS.md')),
-    false,
-  );
-  assert.match(summary.nextSteps[0] ?? '', /\.ael\/agent-guide\.md/);
+  assert.equal(pathListIncludesSuffix(summary.files.updated, 'AGENTS.md'), false);
+  assert.equal(pathListIncludesSuffix(summary.files.created, 'AGENTS.md'), false);
+  assert.match(normalizeSlashes(summary.nextSteps[0] ?? ''), /\.ael\/agent-guide\.md/);
 
   const agents = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');
   assert.equal(agents, '# Team-Owned Instructions\n');
@@ -465,14 +455,14 @@ test('uninstall removes managed files and exact-match scripts from a downstream 
 
   assert.equal(summary.ok, true);
   assert.equal(summary.dryRun, false);
-  assert.ok(summary.files.removed.some((path) => path.endsWith('/AGENTS.md')));
-  assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/agent-guide.md')));
-  assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/project-contract.md')));
-  assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/.gitignore')));
-  assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/install.json')));
-  assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/config.local.json')));
-  assert.ok(summary.files.removed.some((path) => path.endsWith('/.ael/settings.json')));
-  assert.ok(summary.files.updated.some((path) => path.endsWith('/package.json')));
+  assert.ok(pathListIncludesSuffix(summary.files.removed, 'AGENTS.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.removed, '.ael/agent-guide.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.removed, '.ael/project-contract.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.removed, '.ael/.gitignore'));
+  assert.ok(pathListIncludesSuffix(summary.files.removed, '.ael/install.json'));
+  assert.ok(pathListIncludesSuffix(summary.files.removed, '.ael/config.local.json'));
+  assert.ok(pathListIncludesSuffix(summary.files.removed, '.ael/settings.json'));
+  assert.ok(pathListIncludesSuffix(summary.files.updated, 'package.json'));
   assert.ok(summary.scripts.removed.includes('ael:install'));
   assert.ok(summary.scripts.removed.includes('ael:uninstall'));
   assert.ok(summary.scripts.removed.includes('ael:backlog-create'));
@@ -526,8 +516,8 @@ test('uninstall --dry-run previews downstream cleanup without removing files', (
 
   assert.equal(summary.ok, true);
   assert.equal(summary.dryRun, true);
-  assert.ok(summary.files.removed.some((path) => path.endsWith('/AGENTS.md')));
-  assert.ok(summary.files.updated.some((path) => path.endsWith('/package.json')));
+  assert.ok(pathListIncludesSuffix(summary.files.removed, 'AGENTS.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.updated, 'package.json'));
   assert.ok(summary.scripts.removed.includes('ael:install'));
   assert.equal(existsSync(join(workspace, 'AGENTS.md')), true);
   assert.equal(existsSync(join(workspace, '.ael', 'agent-guide.md')), true);
