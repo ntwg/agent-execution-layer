@@ -104,7 +104,7 @@ test('config supports work item field defaults', (t) => {
     configPath,
     `${JSON.stringify(
       {
-        configVersion: 3,
+        configVersion: 4,
         enabled: true,
         organizationUrl: 'https://dev.azure.com/example-org',
         project: 'example-project',
@@ -137,6 +137,9 @@ test('config supports work item field defaults', (t) => {
           active: 'Active',
           done: 'Closed',
         },
+        runtime: {
+          platform: 'windows',
+        },
       },
       null,
       2,
@@ -152,4 +155,5 @@ test('config supports work item field defaults', (t) => {
     3,
   );
   assert.equal(inspection.config?.workItemFieldDefaults.done['Custom.VerifiedByHuman'], false);
+  assert.equal(inspection.config?.runtime.platform, 'windows');
 });

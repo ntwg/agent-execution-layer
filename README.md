@@ -70,6 +70,8 @@ You can also point at a different config file with:
 AGENT_EXECUTION_CONFIG=/absolute/path/to/config.json npm run ael:status
 ```
 
+If a machine needs an explicit platform override, run `ael init --platform windows`, `ael init --platform mac`, or `ael init --platform linux`. That value is stored in the local `.ael/config.local.json` file because it is machine-specific.
+
 ## Setup
 
 ```bash
@@ -92,6 +94,11 @@ Prerequisites:
 - Azure CLI installed
 - Azure DevOps extension available in Azure CLI
 - either `az login` completed for the target tenant/org or `AEL_ADO_PAT` exported for PAT-backed Azure DevOps auth
+
+Auth note:
+
+- normal status, report, doctor, branch, commit, and PR flows work with either `az login` or `AEL_ADO_PAT`
+- PR label write-back and existing work-item comment repair are still strongest with `AEL_ADO_PAT`
 
 Repo guardrails:
 
@@ -152,6 +159,7 @@ npm run ael:report
 - `agents` is an explicit list of agent definitions with `key`, `tag`, `branchPrefix`, and `defaultAssignee`
 - `defaultAgent` is the fallback for commands that can infer an agent
 - `workItemFieldDefaults.create` and `workItemFieldDefaults.done` can stamp extra Azure DevOps field values during item creation and closeout
+- `runtime.platform` lets a local config pin command behavior to `auto`, `windows`, `mac`, or `linux`
 
 ## Files
 

@@ -53,6 +53,7 @@ import {
   slugify,
   summarizeCommandFailure,
   uniqueTags,
+  usesPatAuth,
   wantsJson,
 } from './ado-cli-runtime.js';
 
@@ -156,18 +157,18 @@ function resolveAzureIdentity(
 }
 
 export function getWorkItem(config: AgentExecutionConfig, id: number): WorkItemShowResult {
-  return azJson(config, [
-    'boards',
-    'work-item',
-    'show',
-    '--id',
-    String(id),
-    '--expand',
-    'fields',
-  ]) as WorkItemShowResult;
+  return showWorkItem(config, id, 'fields');
 }
 
 function getWorkItemWithRelations(config: AgentExecutionConfig, id: number): WorkItemShowResult {
+  return showWorkItem(config, id, 'relations');
+}
+
+function showWorkItem(
+  config: AgentExecutionConfig,
+  id: number,
+  expand: 'fields' | 'relations' | 'all',
+): WorkItemShowResult {
   return azJson(config, [
     'boards',
     'work-item',
@@ -175,7 +176,7 @@ function getWorkItemWithRelations(config: AgentExecutionConfig, id: number): Wor
     '--id',
     String(id),
     '--expand',
-    'relations',
+    expand,
   ]) as WorkItemShowResult;
 }
 
@@ -186,16 +187,7 @@ export function getWorkItemsBatch(
 ): WorkItemShowResult[] {
   const uniqueIds = Array.from(new Set(ids.filter(Number.isFinite)));
   if (uniqueIds.length === 0) return [];
-  const items: WorkItemShowResult[] = [];
-  for (let index = 0; index < uniqueIds.length; index += 100) {
-    const chunk = uniqueIds.slice(index, index + 100);
-    const url =
-      `${config.organizationUrl}/${encodeURIComponent(config.project)}` +
-      `/_apis/wit/workitems?ids=${chunk.join(',')}&$expand=${expand}&api-version=7.1`;
-    const result = devopsRestJson(config, 'GET', url) as { value?: WorkItemShowResult[] };
-    items.push(...(result.value ?? []));
-  }
-  return items;
+  return uniqueIds.map((id) => showWorkItem(config, id, expand));
 }
 
 export function getWorkItemTags(config: AgentExecutionConfig, id: number): string[] {
@@ -378,6 +370,23 @@ export function addPullRequestWorkItems(
 }
 
 export function listPullRequestLabels(config: AgentExecutionConfig, prId: number): string[] {
+  const pr = getPullRequest(config, prId) as PullRequestRecord & {
+    labels?: Array<{ name?: string | null }> | null;
+  };
+  if (Array.isArray(pr.labels)) {
+    return Array.from(
+      new Set(
+        pr.labels
+          .map((label) => label.name?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+  }
+
+  if (!usesPatAuth()) {
+    return [];
+  }
+
   const url =
     `${config.organizationUrl}/${encodeURIComponent(config.project)}` +
     `/_apis/git/repositories/${encodeURIComponent(config.repositoryId)}/pullRequests/${prId}/labels?api-version=7.1-preview.1`;
@@ -396,6 +405,9 @@ export function addPullRequestLabel(
   prId: number,
   label: string,
 ): void {
+  if (!usesPatAuth()) {
+    return;
+  }
   const url =
     `${config.organizationUrl}/${encodeURIComponent(config.project)}` +
     `/_apis/git/repositories/${encodeURIComponent(config.repositoryId)}/pullRequests/${prId}/labels?api-version=7.1-preview.1`;
@@ -409,6 +421,7 @@ export function syncPullRequestLabels(
   syncTagMode: 'non-agent' | 'all',
 ): string[] {
   if (workItemIds.length === 0 || !config.prDefaults.syncWorkItemTags) return [];
+  if (!usesPatAuth()) return [];
   const targetTags = normalizeTags(
     workItemIds
       .flatMap((id) => getWorkItemTags(config, id))
@@ -455,6 +468,9 @@ export function listWorkItemComments(
   config: AgentExecutionConfig,
   id: number,
 ): Array<{ id: number; text: string; format: string }> {
+  if (!usesPatAuth()) {
+    return [];
+  }
   const url =
     `${config.organizationUrl}/${encodeURIComponent(config.project)}` +
     `/_apis/wit/workItems/${id}/comments?api-version=7.1-preview.4`;
@@ -474,6 +490,9 @@ export function updateWorkItemComment(
   commentId: number,
   text: string,
 ): void {
+  if (!usesPatAuth()) {
+    return;
+  }
   const url =
     `${config.organizationUrl}/${encodeURIComponent(config.project)}` +
     `/_apis/wit/workItems/${workItemId}/comments/${commentId}?api-version=7.1-preview.4`;
@@ -970,6 +989,7 @@ export function commandPr(config: AgentExecutionConfig, args: string[]): void {
   const draft = !hasFlag(args, '--ready');
   const reviewer = resolveReviewerFromArgs(config, args, item);
   const syncPrTags = shouldSyncPrTags(config, args);
+  const prTagSyncSupported = usesPatAuth();
 
   pushCurrentBranch(currentBranch);
 
@@ -1079,6 +1099,7 @@ export function commandPr(config: AgentExecutionConfig, args: string[]): void {
       autoComplete: hasFlag(args, '--auto-complete'),
       reviewer,
       syncPrTags,
+      prTagSyncSupported,
       addedTags,
       ...(prUrl ? { url: prUrl } : {}),
     });
@@ -1091,7 +1112,13 @@ export function commandPr(config: AgentExecutionConfig, args: string[]): void {
     console.log('Reviewer: (none)');
   }
   if (syncPrTags) {
-    console.log(`PR tags: ${addedTags.length > 0 ? addedTags.join(', ') : '(no new tags added)'}`);
+    if (!prTagSyncSupported) {
+      console.log('PR tags: skipped write-back under Azure CLI auth (use a PAT to sync labels)');
+    } else {
+      console.log(
+        `PR tags: ${addedTags.length > 0 ? addedTags.join(', ') : '(no new tags added)'}`,
+      );
+    }
   } else {
     console.log('PR tags: sync disabled');
   }

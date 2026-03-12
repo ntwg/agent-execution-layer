@@ -1,18 +1,16 @@
 import assert from 'node:assert/strict';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { DEFAULT_CONFIG_FILENAME } from '../scripts/lib/config.js';
-import { execLocalBin, normalizeSlashes, prependPathEntry, writeCommandStub } from './test-helpers.js';
+import {
+  execLocalBin,
+  normalizeSlashes,
+  prependPathEntry,
+  writeCommandStub,
+} from './test-helpers.js';
 
 const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
 const CLI_PATH = join(REPO_ROOT, 'scripts', 'ael.ts');
@@ -216,12 +214,16 @@ test('init writes a local generated config and doctor/smoke pass with stubs', (t
     repositoryId: string;
     defaultBranch: string;
     defaultAgent: string;
+    runtime: {
+      platform: string;
+    };
   };
   assert.equal(config.repositoryId, TEST_REPOSITORY_ID);
   assert.equal(config.defaultBranch, 'main');
   assert.equal(config.defaultAreaPath, 'agent-execution-layer');
   assert.equal(config.defaultIterationPath, 'agent-execution-layer');
   assert.equal(config.defaultAgent, 'codex');
+  assert.equal(config.runtime.platform, 'auto');
 
   const doctorOutput = runCli(['doctor'], workspace, env);
   assert.match(doctorOutput, /PASS git repository/);
@@ -233,10 +235,16 @@ test('init writes a local generated config and doctor/smoke pass with stubs', (t
   const statusJson = JSON.parse(runCli(['status', '--json'], workspace, env)) as {
     backend: string;
     validation: { ok: boolean };
+    config: {
+      runtime: {
+        platform: string;
+      };
+    };
     nextSteps: string[];
   };
   assert.equal(statusJson.backend, 'azure-devops');
   assert.equal(statusJson.validation.ok, true);
+  assert.equal(statusJson.config.runtime.platform, 'auto');
   assert.deepEqual(statusJson.nextSteps, ['ael doctor', 'ael next -- --agent <agent-key>']);
 
   const doctorJson = JSON.parse(runCli(['doctor', '--json'], workspace, env)) as {
@@ -273,6 +281,48 @@ test('init writes a local generated config and doctor/smoke pass with stubs', (t
   assert.match(smokeOutput, /PASS work item query smoke/);
   assert.match(smokeOutput, /PASS pull request list smoke/);
   assert.match(smokeOutput, /PASS active pr merge readiness/);
+});
+
+test('init can pin the local runtime platform', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const { binDir, gitCommandPath, azCommandPath } = installStubCommands(workspace);
+  const env = {
+    PATH: prependPathEntry(binDir),
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
+    AEL_TEST_WORKSPACE: workspace,
+    AEL_TEST_REMOTE:
+      'https://dev.azure.com/example-org/agent-execution-layer/_git/agent-execution-layer',
+    AEL_TEST_BRANCH: 'main',
+  };
+
+  runCli(
+    [
+      'init',
+      '--organization-url',
+      'https://dev.azure.com/example-org',
+      '--project',
+      'agent-execution-layer',
+      '--repository',
+      'agent-execution-layer',
+      '--default-branch',
+      'main',
+      '--platform',
+      'windows',
+    ],
+    workspace,
+    env,
+  );
+
+  const configPath = join(workspace, DEFAULT_CONFIG_FILENAME);
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+    runtime: {
+      platform: string;
+    };
+  };
+  assert.equal(config.runtime.platform, 'windows');
 });
 
 test('doctor passes with PAT auth fallback and no azure login', (t) => {

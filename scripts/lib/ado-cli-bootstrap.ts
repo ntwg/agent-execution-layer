@@ -23,6 +23,7 @@ import {
   DEFAULT_PR_DEFAULTS,
   DEFAULT_PROJECT_CONTRACT_FILENAME,
   DEFAULT_REPORT_DEFAULTS,
+  DEFAULT_RUNTIME_SETTINGS,
   DEFAULT_SETTINGS_FILENAME,
   normalizeAgentKey,
   type AgentDefinition,
@@ -753,6 +754,7 @@ export function printStatus(args: string[] = []): void {
   console.log(
     `report defaults: staleDays=${config.reportDefaults.staleDays}, recentDays=${config.reportDefaults.recentDays}`,
   );
+  console.log(`runtime platform: ${config.runtime.platform}`);
   for (const nextStep of buildStatusNextSteps(inspection)) {
     console.log(`next: ${nextStep}`);
   }
@@ -842,6 +844,10 @@ export async function commandInit(args: string[]): Promise<void> {
     parseArgValue(args, '--default-branch')?.trim() ??
     existingValidConfig?.defaultBranch ??
     detectedDefaultBranch;
+  const runtimePlatform =
+    parseArgValue(args, '--platform')?.trim().toLowerCase() ??
+    existingValidConfig?.runtime.platform ??
+    DEFAULT_RUNTIME_SETTINGS.platform;
   let defaultAreaPath =
     parseArgValue(args, '--area-path')?.trim() ??
     (forceOverwrite ? undefined : existingValidConfig?.defaultAreaPath);
@@ -939,6 +945,12 @@ export async function commandInit(args: string[]): Promise<void> {
     },
     prDefaults: existingValidConfig?.prDefaults ?? DEFAULT_PR_DEFAULTS,
     reportDefaults: existingValidConfig?.reportDefaults ?? DEFAULT_REPORT_DEFAULTS,
+    runtime: {
+      platform:
+        runtimePlatform === 'windows' || runtimePlatform === 'mac' || runtimePlatform === 'linux'
+          ? runtimePlatform
+          : DEFAULT_RUNTIME_SETTINGS.platform,
+    },
   };
 
   saveConfig(config, targetConfigPath);
@@ -965,6 +977,7 @@ export async function commandInit(args: string[]): Promise<void> {
       defaultIterationPath: config.defaultIterationPath,
       defaultAgent: config.defaultAgent,
       agents: config.agents.map((agent) => agent.key),
+      runtime: config.runtime,
       warnings: inspection.warnings,
       nextSteps: [preferredWorkflowCommand('doctor')],
     });
@@ -987,6 +1000,7 @@ export async function commandInit(args: string[]): Promise<void> {
   console.log(`default iteration: ${config.defaultIterationPath}`);
   console.log(`default agent: ${config.defaultAgent}`);
   console.log(`agents: ${config.agents.map((agent) => agent.key).join(', ')}`);
+  console.log(`runtime platform: ${config.runtime.platform}`);
   if (inspection.warnings.length > 0) {
     for (const warning of inspection.warnings) {
       console.log(`warning: ${warning}`);
@@ -1325,7 +1339,7 @@ export function printHelp(): void {
   );
   console.log('  uninstall [--dry-run] [--json]');
   console.log(
-    '  init [--organization-url <url>] [--project <name>] [--repository <name>] [--repository-id <id>] [--default-branch <branch>] [--area-path "<path>"] [--iteration-path "<path>"] [--agents "codex;claude"] [--default-agent <agent-key>] [--force] [--json]',
+    '  init [--organization-url <url>] [--project <name>] [--repository <name>] [--repository-id <id>] [--default-branch <branch>] [--area-path "<path>"] [--iteration-path "<path>"] [--agents "codex;claude"] [--default-agent <agent-key>] [--platform auto|windows|mac|linux] [--force] [--json]',
   );
   console.log('  doctor [--smoke|--adoption] [--json]');
   console.log('  smoke [--json]');
