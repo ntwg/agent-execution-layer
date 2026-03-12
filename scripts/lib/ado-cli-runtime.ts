@@ -217,9 +217,26 @@ export function normalizeAgent(
   );
 }
 
+export function resolveCommandInvocation(
+  args: string[],
+  platform = process.platform,
+): { command: string; args: string[] } {
+  if (platform === 'win32' && args[0]?.toLowerCase() === 'az') {
+    return {
+      command: 'cmd.exe',
+      args: ['/d', '/s', '/c', ...args],
+    };
+  }
+  return {
+    command: args[0],
+    args: args.slice(1),
+  };
+}
+
 export function runCommand(args: string[]): CommandResult {
   try {
-    const stdout = execFileSync(args[0], args.slice(1), {
+    const invocation = resolveCommandInvocation(args);
+    const stdout = execFileSync(invocation.command, invocation.args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       env: buildCommandEnv(),
