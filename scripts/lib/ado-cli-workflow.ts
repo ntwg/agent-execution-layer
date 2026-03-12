@@ -1115,7 +1115,9 @@ export function commandPr(config: AgentExecutionConfig, args: string[]): void {
     if (!prTagSyncSupported) {
       console.log('PR tags: skipped write-back under Azure CLI auth (use a PAT to sync labels)');
     } else {
-      console.log(`PR tags: ${addedTags.length > 0 ? addedTags.join(', ') : '(no new tags added)'}`);
+      console.log(
+        `PR tags: ${addedTags.length > 0 ? addedTags.join(', ') : '(no new tags added)'}`,
+      );
     }
   } else {
     console.log('PR tags: sync disabled');

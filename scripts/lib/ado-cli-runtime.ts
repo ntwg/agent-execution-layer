@@ -636,9 +636,7 @@ export function printCheck(label: string, ok: boolean, detail: string): void {
   console.log(`- ${ok ? 'PASS' : 'FAIL'} ${label}: ${detail}`);
 }
 
-function resolveExecutionPlatform(
-  env: NodeJS.ProcessEnv = process.env,
-): NodeJS.Platform {
+function resolveExecutionPlatform(env: NodeJS.ProcessEnv = process.env): NodeJS.Platform {
   const configured = normalizeRuntimePlatform(
     env.AEL_PLATFORM?.trim() || readRuntimePlatformFromPath(CONFIG_PATH),
   );

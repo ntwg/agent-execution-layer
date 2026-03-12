@@ -1,18 +1,16 @@
 import assert from 'node:assert/strict';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { DEFAULT_CONFIG_FILENAME } from '../scripts/lib/config.js';
-import { execLocalBin, normalizeSlashes, prependPathEntry, writeCommandStub } from './test-helpers.js';
+import {
+  execLocalBin,
+  normalizeSlashes,
+  prependPathEntry,
+  writeCommandStub,
+} from './test-helpers.js';
 
 const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
 const CLI_PATH = join(REPO_ROOT, 'scripts', 'ael.ts');
