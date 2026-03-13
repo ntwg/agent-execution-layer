@@ -1403,6 +1403,7 @@ export function printHelp(): void {
   console.log(
     '  install [--agent-key <agent-key>] [--default-branch <branch>] [--entrypoint-file <path>] [--with-scripts|--minimal] [--no-root-agents] [--dry-run] [--explain] [--force] [--json]',
   );
+  console.log('  refresh [--dry-run] [--json]');
   console.log('  upgrade [--dry-run] [--explain] [--json]');
   console.log('  uninstall [--dry-run] [--explain] [--json]');
   console.log(

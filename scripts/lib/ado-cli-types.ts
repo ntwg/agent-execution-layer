@@ -233,6 +233,28 @@ export interface UpgradeSummary {
   nextSteps: string[];
 }
 
+export interface RefreshSummary {
+  ok: boolean;
+  dryRun: boolean;
+  workspace: string;
+  packageJsonPath: string;
+  packageManager: string;
+  dependency: {
+    name: string;
+    section: 'dependencies' | 'devDependencies';
+    spec: string;
+    installedVersionBefore?: string;
+    installedVersionAfter?: string;
+  };
+  commands: {
+    update: string;
+    upgrade: string;
+  };
+  upgrade?: UpgradeSummary;
+  warnings: string[];
+  nextSteps: string[];
+}
+
 export interface UninstallSummary {
   ok: boolean;
   dryRun: boolean;

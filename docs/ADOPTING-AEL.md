@@ -53,7 +53,8 @@ If a downstream repo wants the root discovery stub somewhere other than `AGENTS.
 If a downstream repo already has its own root instruction file, run `ael install --no-root-agents` to keep AEL entirely under `.ael/`.
 If a downstream repo wants to see the exact changes before writing anything, run `ael install --dry-run`.
 If a downstream repo wants a clear ownership summary before adopting or refreshing AEL, run `ael install --explain` or `ael upgrade --explain`.
-After updating the AEL dependency in a downstream repo, run `ael upgrade` to refresh the managed AEL files in that repo.
+Run `ael refresh` when you want AEL to update the installed dependency and then refresh the managed AEL files in one step.
+Keep `ael upgrade` for cases where the dependency was already updated and you only want to sync the managed repo files.
 
 This repo is now package-ready with an `ael` bin entrypoint. It is still marked `private` until publish timing and package visibility are finalized.
 
@@ -87,7 +88,7 @@ Minimum downstream setup:
 
 If the repo prefers `npm run ael:*` scripts, use `ael install --with-scripts` instead.
 If the repo already manages its own root `AGENTS.md`, use `ael install --no-root-agents` and point that existing file at `.ael/agent-guide.md`.
-If the installed AEL version changes later, run `ael upgrade` before `ael doctor --adoption` so the downstream repo picks up the latest managed stubs and script shims.
+If the installed AEL version changes later, run `ael refresh` before `ael doctor --adoption` so the downstream repo picks up both the new dependency version and the latest managed stubs and script shims.
 If you want to remove AEL later, use `ael uninstall` or preview the cleanup with `ael uninstall --dry-run`.
 If the repo uses multiple long-lived branches, set `.ael/config.local.json` `branching.rolloutBranches` and `branching.branchAliases` so agents can use `ael pr --rollout` and `ael cleanup-prs` consistently.
 
@@ -151,6 +152,7 @@ Optional standard mode:
 - `ael install --with-scripts` also adds repo-local `ael:*` package scripts
 - `ael install --dry-run` previews the exact files and scripts AEL would touch
 - `ael install --explain` and `ael upgrade --explain` print which files AEL manages directly versus which files remain repo-owned or local-only
+- `ael refresh` updates the installed AEL dependency and then refreshes the managed AEL files in one command
 - `ael upgrade` refreshes AEL-managed files after an AEL package update while preserving repo-owned `.ael/project-contract.md`, `.ael/settings.json`, and `.ael/config.local.json`
 - script mode exposes the full repo-local `ael:*` workflow shortcut set, including `ael:backlog-create`, `ael:backlog-polish`, `ael:block`, `ael:unblock`, `ael:claim`, `ael:prioritize`, `ael:link`, `ael:branch`, `ael:retag`, `ael:cleanup-branches`, and `ael:cleanup-prs`
 
@@ -165,6 +167,7 @@ Optional no-root mode:
 
 Cleanup mode:
 
+- `ael refresh --dry-run` previews the downstream package update plus the managed-file refresh plan
 - `ael upgrade --dry-run` previews the managed-file refresh before changing the repo
 - `ael uninstall` removes AEL-managed downstream files and exact-match package-script shims
 - `ael uninstall --dry-run` previews that cleanup before changing the repo

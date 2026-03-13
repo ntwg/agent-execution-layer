@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { execLocalBin, normalizeSlashes, pathListIncludesSuffix } from './test-helpers.js';
+import {
+  execLocalBin,
+  normalizeSlashes,
+  pathListIncludesSuffix,
+  writeCommandStub,
+} from './test-helpers.js';
 
 const REPO_ROOT = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
 const CLI_PATH = join(REPO_ROOT, 'scripts', 'ael.ts');
@@ -17,6 +22,14 @@ function runCli(args: string[], workspace: string): string {
   return execLocalBin(REPO_ROOT, 'tsx', [CLI_PATH, ...args], {
     cwd: workspace,
     env: process.env,
+    encoding: 'utf8',
+  });
+}
+
+function runCliWithEnv(args: string[], workspace: string, env: NodeJS.ProcessEnv): string {
+  return execLocalBin(REPO_ROOT, 'tsx', [CLI_PATH, ...args], {
+    cwd: workspace,
+    env,
     encoding: 'utf8',
   });
 }
@@ -181,6 +194,7 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   assert.equal(summary.rootInstructions, 'managed');
   assert.equal(summary.rootInstructionsPath, 'AGENTS.md');
   assert.ok(summary.scripts.added.includes('ael:install'));
+  assert.ok(summary.scripts.added.includes('ael:refresh'));
   assert.ok(summary.scripts.added.includes('ael:upgrade'));
   assert.ok(summary.scripts.added.includes('ael:uninstall'));
   assert.ok(summary.scripts.added.includes('ael:backlog-create'));
@@ -200,6 +214,7 @@ test('install --with-scripts writes downstream package scripts and keeps script-
     scripts: Record<string, string>;
   };
   assert.equal(packageJson.scripts['ael:install'], 'ael install --with-scripts');
+  assert.equal(packageJson.scripts['ael:refresh'], 'ael refresh');
   assert.equal(packageJson.scripts['ael:upgrade'], 'ael upgrade');
   assert.equal(packageJson.scripts['ael:uninstall'], 'ael uninstall');
   assert.equal(packageJson.scripts['ael:backlog-create'], 'ael backlog-create');
@@ -487,8 +502,11 @@ test('upgrade refreshes managed files while preserving user-owned templates', (t
   ) as {
     scripts: Record<string, string>;
   };
-  const { 'ael:upgrade': _removedUpgradeScript, ...remainingScripts } =
-    packageJsonBeforeUpgrade.scripts;
+  const {
+    'ael:refresh': _removedRefreshScript,
+    'ael:upgrade': _removedUpgradeScript,
+    ...remainingScripts
+  } = packageJsonBeforeUpgrade.scripts;
   packageJsonBeforeUpgrade.scripts = remainingScripts;
   packageJsonBeforeUpgrade.scripts['ael:status'] = 'echo stale-status';
   writeFileSync(
@@ -513,6 +531,7 @@ test('upgrade refreshes managed files while preserving user-owned templates', (t
   assert.equal(summary.defaults.agentKey, 'claude');
   assert.equal(summary.defaults.defaultBranch, 'release');
   assert.ok(summary.scripts.added.includes('ael:upgrade'));
+  assert.ok(summary.scripts.added.includes('ael:refresh'));
   assert.ok(summary.scripts.updated.includes('ael:status'));
   assert.ok(pathListIncludesSuffix(summary.files.updated, 'package.json'));
   assert.ok(pathListIncludesSuffix(summary.files.updated, '.ael/agent-guide.md'));
@@ -525,6 +544,7 @@ test('upgrade refreshes managed files while preserving user-owned templates', (t
     scripts: Record<string, string>;
   };
   assert.equal(packageJson.scripts['ael:upgrade'], 'ael upgrade');
+  assert.equal(packageJson.scripts['ael:refresh'], 'ael refresh');
   assert.equal(packageJson.scripts['ael:status'], 'ael status --json');
 
   const guide = readFileSync(join(workspace, '.ael', 'agent-guide.md'), 'utf8');
@@ -545,6 +565,137 @@ test('upgrade refreshes managed files while preserving user-owned templates', (t
   };
   assert.equal(installManifest.defaults.agentKey, 'claude');
   assert.equal(installManifest.defaults.defaultBranch, 'release');
+});
+
+test('refresh updates the installed AEL dependency and then runs upgrade with the new package', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  writeFileSync(
+    join(workspace, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'refresh-repo',
+        private: true,
+        devDependencies: {
+          'agent-execution-layer': 'github:ntwg/agent-execution-layer',
+        },
+        scripts: {
+          build: 'tsc -p .',
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  runCli(['install', '--with-scripts', '--json'], workspace);
+
+  const binDir = join(workspace, 'bin');
+  const npmStatePath = join(workspace, 'npm-state.json');
+  const refreshInvocationPath = join(workspace, 'refresh-invocation.json');
+  mkdirSync(binDir, { recursive: true });
+
+  const npmStubPath = writeCommandStub(
+    binDir,
+    'npm',
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+const statePath = process.env.AEL_REFRESH_NPM_STATE;
+const installedPackagePath = process.env.AEL_REFRESH_INSTALLED_PACKAGE;
+
+fs.writeFileSync(statePath, JSON.stringify({ args }, null, 2) + '\\n', 'utf8');
+const packageJsonPath = path.join(installedPackagePath, 'package.json');
+const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+pkg.version = '0.4.0';
+fs.writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2) + '\\n', 'utf8');
+`,
+  );
+
+  const installedPackageDir = join(workspace, 'node_modules', 'agent-execution-layer');
+  mkdirSync(join(installedPackageDir, 'bin'), { recursive: true });
+  writeFileSync(
+    join(installedPackageDir, 'package.json'),
+    `${JSON.stringify({ name: 'agent-execution-layer', version: '0.3.0' }, null, 2)}\n`,
+    'utf8',
+  );
+  writeFileSync(
+    join(installedPackageDir, 'bin', 'ael.js'),
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+const invocationPath = process.env.AEL_REFRESH_INVOCATION;
+fs.writeFileSync(invocationPath, JSON.stringify({ argv: process.argv.slice(2) }, null, 2) + '\\n', 'utf8');
+process.stdout.write(JSON.stringify({
+  ok: true,
+  dryRun: false,
+  mode: 'with-scripts',
+  rootInstructions: 'managed',
+  rootInstructionsPath: 'AGENTS.md',
+  workspace: process.cwd(),
+  packageJsonPath: 'package.json',
+  defaults: { agentKey: 'codex', defaultBranch: 'main' },
+  scripts: { added: [], updated: [], unchanged: [] },
+  files: { created: [], updated: ['.ael/agent-guide.md'], unchanged: [], preserved: ['.ael/project-contract.md'] },
+  ownership: { managedFiles: ['.ael/agent-guide.md'], userOwnedFiles: ['.ael/project-contract.md'], localOnlyFiles: ['.ael/config.local.json'] },
+  warnings: [],
+  nextSteps: ['npm run ael:doctor -- --adoption']
+}, null, 2));
+`,
+    'utf8',
+  );
+
+  const summary = JSON.parse(
+    runCliWithEnv(['refresh', '--json'], workspace, {
+      ...process.env,
+      AEL_CMD_NPM: npmStubPath,
+      AEL_REFRESH_NPM_STATE: npmStatePath,
+      AEL_REFRESH_INSTALLED_PACKAGE: installedPackageDir,
+      AEL_REFRESH_INVOCATION: refreshInvocationPath,
+    }),
+  ) as {
+    ok: boolean;
+    packageManager: string;
+    dependency: {
+      section: string;
+      spec: string;
+      installedVersionBefore?: string;
+      installedVersionAfter?: string;
+    };
+    commands: { update: string; upgrade: string };
+    upgrade?: { ok: boolean; files: { updated: string[]; preserved: string[] } };
+  };
+
+  assert.equal(summary.ok, true);
+  assert.equal(summary.packageManager, 'npm');
+  assert.equal(summary.dependency.section, 'devDependencies');
+  assert.equal(summary.dependency.spec, 'github:ntwg/agent-execution-layer');
+  assert.equal(summary.dependency.installedVersionBefore, '0.3.0');
+  assert.equal(summary.dependency.installedVersionAfter, '0.4.0');
+  assert.match(
+    summary.commands.update,
+    /npm install --save-dev agent-execution-layer@github:ntwg\/agent-execution-layer/,
+  );
+  assert.match(summary.commands.upgrade, /npx --no-install ael upgrade --json/);
+  assert.equal(summary.upgrade?.ok, true);
+  assert.ok(pathListIncludesSuffix(summary.upgrade?.files.updated ?? [], '.ael/agent-guide.md'));
+  assert.ok(
+    pathListIncludesSuffix(summary.upgrade?.files.preserved ?? [], '.ael/project-contract.md'),
+  );
+
+  const npmState = JSON.parse(readFileSync(npmStatePath, 'utf8')) as { args: string[] };
+  assert.deepEqual(npmState.args, [
+    'install',
+    '--save-dev',
+    'agent-execution-layer@github:ntwg/agent-execution-layer',
+  ]);
+
+  const refreshInvocation = JSON.parse(readFileSync(refreshInvocationPath, 'utf8')) as {
+    argv: string[];
+  };
+  assert.deepEqual(refreshInvocation.argv, ['upgrade', '--json']);
 });
 
 test('uninstall removes managed files and exact-match scripts from a downstream repo', (t) => {
@@ -593,6 +744,7 @@ test('uninstall removes managed files and exact-match scripts from a downstream 
   assert.ok(pathListIncludesSuffix(summary.files.removed, '.ael/settings.json'));
   assert.ok(pathListIncludesSuffix(summary.files.updated, 'package.json'));
   assert.ok(summary.scripts.removed.includes('ael:install'));
+  assert.ok(summary.scripts.removed.includes('ael:refresh'));
   assert.ok(summary.scripts.removed.includes('ael:upgrade'));
   assert.ok(summary.scripts.removed.includes('ael:uninstall'));
   assert.ok(summary.scripts.removed.includes('ael:block'));
@@ -654,6 +806,7 @@ test('uninstall --dry-run previews downstream cleanup without removing files', (
   assert.ok(pathListIncludesSuffix(summary.files.removed, 'AGENTS.md'));
   assert.ok(pathListIncludesSuffix(summary.files.updated, 'package.json'));
   assert.ok(summary.scripts.removed.includes('ael:install'));
+  assert.ok(summary.scripts.removed.includes('ael:refresh'));
   assert.ok(summary.scripts.removed.includes('ael:upgrade'));
   assert.equal(existsSync(join(workspace, 'AGENTS.md')), true);
   assert.equal(existsSync(join(workspace, '.ael', 'agent-guide.md')), true);
@@ -662,5 +815,6 @@ test('uninstall --dry-run previews downstream cleanup without removing files', (
     scripts?: Record<string, string>;
   };
   assert.equal(packageJson.scripts?.['ael:install'], 'ael install --with-scripts');
+  assert.equal(packageJson.scripts?.['ael:refresh'], 'ael refresh');
   assert.equal(packageJson.scripts?.['ael:upgrade'], 'ael upgrade');
 });

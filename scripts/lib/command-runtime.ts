@@ -12,7 +12,7 @@ export interface CommandRuntimeProfile {
   wrapOverrideCommand?(override: string, args: string[]): CommandInvocation;
 }
 
-const WINDOWS_SHELL_COMMANDS = new Set(['az', 'git', 'curl']);
+const WINDOWS_SHELL_COMMANDS = new Set(['az', 'git', 'curl', 'npm', 'npx', 'pnpm', 'yarn']);
 
 function escapeWindowsShellArg(arg: string): string {
   return arg.replaceAll(/[()%!^&|]/g, (match) => (match === '%' ? '%%' : `^${match}`));

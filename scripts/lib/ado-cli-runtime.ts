@@ -58,10 +58,12 @@ export function ensureTrailingNewline(value: string): string {
   return value.endsWith('\n') ? value : `${value}\n`;
 }
 
-export function detectPackageManagerCommand(): string {
+export function detectPackageManagerCommand(cwd = process.cwd()): string {
   const packageManager = process.env.npm_config_user_agent ?? '';
   if (packageManager.startsWith('pnpm/')) return 'pnpm';
   if (packageManager.startsWith('yarn/')) return 'yarn';
+  if (existsSync(resolve(cwd, 'pnpm-lock.yaml'))) return 'pnpm';
+  if (existsSync(resolve(cwd, 'yarn.lock'))) return 'yarn';
   return 'npm';
 }
 

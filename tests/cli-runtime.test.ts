@@ -34,6 +34,16 @@ test('resolveCommandInvocation routes Windows az commands through cmd.exe', () =
   });
 });
 
+test('resolveCommandInvocation routes Windows npm commands through cmd.exe', () => {
+  assert.deepEqual(
+    resolveCommandInvocation(['npm', 'install', '--save-dev', 'agent-execution-layer'], 'win32'),
+    {
+      command: 'cmd.exe',
+      args: ['/d', '/s', '/c', 'npm', 'install', '--save-dev', 'agent-execution-layer'],
+    },
+  );
+});
+
 test('resolveCommandInvocation routes Windows git commands through cmd.exe', () => {
   assert.deepEqual(resolveCommandInvocation(['git', 'status'], 'win32'), {
     command: 'cmd.exe',

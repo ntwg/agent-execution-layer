@@ -1,9 +1,11 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
   InstallScriptConflict,
   InstallSummary,
+  RefreshSummary,
   UninstallSummary,
   UpgradeSummary,
 } from './ado-cli-types.js';
@@ -26,6 +28,8 @@ import {
   isRecord,
   parseArgValue,
   printJson,
+  runCommand,
+  summarizeCommandFailure,
   uniqueStrings,
   wantsJson,
 } from './ado-cli-runtime.js';
@@ -40,6 +44,9 @@ type InstallMode = 'minimal' | 'with-scripts';
 type RootInstructionsMode = 'managed' | 'external';
 type TemplateWriteStatus = 'created' | 'updated' | 'unchanged';
 type RemovalStatus = 'removed' | 'updated' | 'unchanged';
+type DependencySection = 'dependencies' | 'devDependencies';
+
+const AEL_PACKAGE_NAME = 'agent-execution-layer';
 
 interface InstallManifest {
   manifestVersion: number;
@@ -64,6 +71,12 @@ interface InstallManifest {
 interface WorkspacePackageData {
   manifest: Record<string, unknown>;
   path?: string;
+}
+
+interface ManagedDependency {
+  name: string;
+  section: DependencySection;
+  spec: string;
 }
 
 interface InstallTemplateContext {
@@ -141,6 +154,120 @@ function loadWorkspacePackageData(workspace: string): WorkspacePackageData {
     manifest: rawManifest,
     path: packageJsonPath,
   };
+}
+
+function readManagedDependency(
+  manifest: Record<string, unknown>,
+  packageName = AEL_PACKAGE_NAME,
+): ManagedDependency | undefined {
+  const dependencyGroups: DependencySection[] = ['devDependencies', 'dependencies'];
+  for (const section of dependencyGroups) {
+    const dependencies = manifest[section];
+    if (!isRecord(dependencies)) continue;
+    const value = dependencies[packageName];
+    if (typeof value === 'string' && value.trim()) {
+      return {
+        name: packageName,
+        section,
+        spec: value.trim(),
+      };
+    }
+  }
+  return undefined;
+}
+
+function formatDependencyTarget(dependency: ManagedDependency): string {
+  return `${dependency.name}@${dependency.spec}`;
+}
+
+function buildDependencyInstallArgs(runner: string, dependency: ManagedDependency): string[] {
+  const target = formatDependencyTarget(dependency);
+  if (runner === 'pnpm') {
+    return [
+      'pnpm',
+      'add',
+      dependency.section === 'devDependencies' ? '--save-dev' : '--save-prod',
+      target,
+    ];
+  }
+  if (runner === 'yarn') {
+    return ['yarn', 'add', target, ...(dependency.section === 'devDependencies' ? ['--dev'] : [])];
+  }
+  return [
+    'npm',
+    'install',
+    dependency.section === 'devDependencies' ? '--save-dev' : '--save-prod',
+    target,
+  ];
+}
+
+function formatCommandForDisplay(args: string[]): string {
+  return args.map((arg) => (/\s/.test(arg) ? JSON.stringify(arg) : arg)).join(' ');
+}
+
+function buildUpgradeExecArgs(runner: string, suffixArgs: string[]): string[] {
+  if (runner === 'pnpm') {
+    return ['pnpm', 'exec', 'ael', 'upgrade', ...suffixArgs];
+  }
+  if (runner === 'yarn') {
+    return ['yarn', 'exec', 'ael', 'upgrade', ...suffixArgs];
+  }
+  return ['npx', '--no-install', 'ael', 'upgrade', ...suffixArgs];
+}
+
+function readInstalledDependencyVersion(
+  workspace: string,
+  packageName = AEL_PACKAGE_NAME,
+): string | undefined {
+  const packageJsonPath = join(workspace, 'node_modules', packageName, 'package.json');
+  if (!existsSync(packageJsonPath)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as unknown;
+    if (!isRecord(parsed)) return undefined;
+    return typeof parsed.version === 'string' ? parsed.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function runInstalledUpgradeCommand(
+  workspace: string,
+  runner: string,
+  upgradeArgs = ['--json'],
+): UpgradeSummary {
+  const installedEntrypoint = join(workspace, 'node_modules', AEL_PACKAGE_NAME, 'bin', 'ael.js');
+
+  if (existsSync(installedEntrypoint)) {
+    try {
+      const stdout = execFileSync(
+        process.execPath,
+        [installedEntrypoint, 'upgrade', ...upgradeArgs],
+        {
+          cwd: workspace,
+          env: process.env,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      return JSON.parse(stdout) as UpgradeSummary;
+    } catch (err) {
+      const error = err as { stdout?: string | Buffer; stderr?: string | Buffer; message?: string };
+      const details = [error.stdout, error.stderr, error.message]
+        .filter(Boolean)
+        .map((value) => String(value).trim())
+        .filter(Boolean)
+        .join('\n');
+      fail(`refresh updated the dependency but failed to run ael upgrade: ${details}`);
+    }
+  }
+
+  const result = runCommand(buildUpgradeExecArgs(runner, upgradeArgs));
+  if (!result.ok) {
+    fail(
+      `refresh updated the dependency but failed to run ael upgrade: ${summarizeCommandFailure(result)}`,
+    );
+  }
+  return JSON.parse(result.stdout || '{}') as UpgradeSummary;
 }
 
 function resolveRepositoryName(workspace: string, manifest: Record<string, unknown>): string {
@@ -1208,6 +1335,110 @@ export function commandUpgrade(args: string[]): void {
   }
   if (hasFlag(args, '--explain')) {
     printOwnershipSummary(summary.ownership);
+  }
+  for (const warning of summary.warnings) {
+    console.log(`warning: ${warning}`);
+  }
+  for (const nextStep of summary.nextSteps) {
+    console.log(`next: ${nextStep}`);
+  }
+}
+
+export function commandRefresh(args: string[]): void {
+  const workspace = process.cwd();
+  const dryRun = hasFlag(args, '--dry-run');
+  if (resolve(workspace) === resolve(PACKAGE_ROOT)) {
+    fail(
+      'refresh targets downstream repos. Run it from the repo that adopted AEL, not inside the AEL package repo.',
+    );
+  }
+
+  const packageData = loadWorkspacePackageData(workspace);
+  if (!packageData.path) {
+    fail(`refresh requires a package.json in ${workspace}.`);
+  }
+
+  const dependency = readManagedDependency(packageData.manifest);
+  if (!dependency) {
+    fail(
+      `refresh requires ${AEL_PACKAGE_NAME} in dependencies or devDependencies so it can update the installed AEL package first.`,
+    );
+  }
+
+  const manifestPath = join(workspace, DEFAULT_INSTALL_MANIFEST_FILENAME);
+  const installManifest = readInstallManifest(manifestPath);
+  if (!installManifest) {
+    fail(`refresh requires ${manifestPath}. Run ael install first.`);
+  }
+
+  const runner = detectPackageManagerCommand(workspace);
+  const packageUpdateArgs = buildDependencyInstallArgs(runner, dependency);
+  const upgradeExecArgs = buildUpgradeExecArgs(runner, ['--json']);
+  const installedVersionBefore = readInstalledDependencyVersion(workspace, dependency.name);
+
+  const summary: RefreshSummary = {
+    ok: true,
+    dryRun,
+    workspace,
+    packageJsonPath: packageData.path,
+    packageManager: runner,
+    dependency: {
+      ...dependency,
+      ...(installedVersionBefore ? { installedVersionBefore } : {}),
+    },
+    commands: {
+      update: formatCommandForDisplay(packageUpdateArgs),
+      upgrade: formatCommandForDisplay(upgradeExecArgs),
+    },
+    warnings: [],
+    nextSteps: [
+      'review package.json and lockfile changes',
+      formatDownstreamWorkflowCommand(
+        'doctor',
+        installManifest.mode,
+        runner,
+        ' -- --adoption',
+        true,
+      ),
+    ],
+  };
+
+  if (!dryRun) {
+    const packageUpdate = runCommand(packageUpdateArgs);
+    if (!packageUpdate.ok) {
+      fail(
+        `refresh failed to update ${dependency.name}: ${summarizeCommandFailure(packageUpdate)}`,
+      );
+    }
+
+    const upgrade = runInstalledUpgradeCommand(workspace, runner);
+    const installedVersionAfter = readInstalledDependencyVersion(workspace, dependency.name);
+    summary.upgrade = upgrade;
+    if (installedVersionAfter) {
+      summary.dependency.installedVersionAfter = installedVersionAfter;
+    }
+  }
+
+  if (wantsJson(args)) {
+    printJson(summary);
+    return;
+  }
+
+  console.log(`=== AEL REFRESH${dryRun ? ' DRY RUN' : ''} ===`);
+  console.log(`workspace: ${workspace}`);
+  console.log(`package manager: ${runner}`);
+  console.log(`dependency: ${dependency.section}.${dependency.name} -> ${dependency.spec}`);
+  if (summary.dependency.installedVersionBefore || summary.dependency.installedVersionAfter) {
+    console.log(
+      `installed version: ${summary.dependency.installedVersionBefore ?? '(unknown)'} -> ${summary.dependency.installedVersionAfter ?? (dryRun ? '(preview only)' : '(unknown)')}`,
+    );
+  }
+  console.log(`update command: ${summary.commands.update}`);
+  console.log(`upgrade command: ${summary.commands.upgrade}`);
+  if (summary.upgrade) {
+    console.log(
+      `managed files refreshed: ${summary.upgrade.files.updated.length} updated, ${summary.upgrade.files.created.length} created, ${summary.upgrade.files.preserved.length} preserved`,
+    );
   }
   for (const warning of summary.warnings) {
     console.log(`warning: ${warning}`);

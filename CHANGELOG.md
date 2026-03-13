@@ -10,6 +10,8 @@ This project keeps a lightweight changelog.
 
 ## Unreleased
 
+- Added `ael refresh` so downstream repos can update the installed AEL dependency and then run the managed-file refresh in one command, with package-manager-aware behavior across macOS, Linux, and Windows.
+
 ## 0.4.0 - 2026-03-13
 
 - Extracted the low-level command runtime into explicit Windows/macOS/Linux profiles so platform-specific invocation behavior is centralized instead of being scattered through the CLI runtime helpers.
