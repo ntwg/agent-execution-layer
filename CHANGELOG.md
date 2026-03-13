@@ -13,6 +13,7 @@ This project keeps a lightweight changelog.
 - Extracted the low-level command runtime into explicit Windows/macOS/Linux profiles so platform-specific invocation behavior is centralized instead of being scattered through the CLI runtime helpers.
 - Expanded CI coverage to run format, lint, build, and test validation across Ubuntu, macOS, and Windows so cross-platform support is continuously verified.
 - Added `.gitattributes` line-ending normalization so cross-platform format checks stay stable when the repo is checked out on Windows.
+- Replaced the shell-globbed test command with a Node-based test runner so `npm test` behaves the same under Windows `cmd.exe`, macOS, and Linux shells.
 
 ## 0.3.0 - 2026-03-12
 
