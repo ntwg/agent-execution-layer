@@ -8,13 +8,21 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        node-version:
-          - 20
-          - 22
+        include:
+          - os: ubuntu-latest
+            node-version: 20
+          - os: ubuntu-latest
+            node-version: 22
+          - os: macos-latest
+            node-version: 20
+          - os: windows-latest
+            node-version: 20
+
+    name: validate (${{ matrix.os }} / node ${{ matrix.node-version }})
 
     steps:
       - name: Checkout

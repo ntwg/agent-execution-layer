@@ -104,7 +104,7 @@ Auth note:
 Repo guardrails:
 
 - Biome is the configured formatter and linter
-- GitHub Actions CI runs format, lint, build, and test on pushes to `main` and pull requests
+- GitHub Actions CI runs format, lint, build, and test on pushes to `main` and pull requests across Ubuntu, macOS, and Windows
 
 ## Core Commands
 
@@ -166,6 +166,7 @@ npm run ael:report
 ## Files
 
 - `scripts/ael.ts`: thin CLI entrypoint and command dispatcher
+- `scripts/lib/command-runtime.ts`: low-level platform command profiles and command invocation routing for Windows, macOS, and Linux
 - `scripts/lib/ado-cli-runtime.ts`: shared CLI/runtime helpers
 - `scripts/lib/ado-cli-bootstrap.ts`: status, init, doctor, and help flows
 - `scripts/lib/ado-cli-workflow.ts`: work-item, branch, commit, PR, and done flows

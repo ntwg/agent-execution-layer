@@ -10,6 +10,9 @@ This project keeps a lightweight changelog.
 
 ## Unreleased
 
+- Extracted the low-level command runtime into explicit Windows/macOS/Linux profiles so platform-specific invocation behavior is centralized instead of being scattered through the CLI runtime helpers.
+- Expanded CI coverage to run format, lint, build, and test validation across Ubuntu, macOS, and Windows so cross-platform support is continuously verified.
+
 ## 0.3.0 - 2026-03-12
 
 - Added `ael upgrade` (plus `ael update` alias) so downstream repos can refresh AEL-managed files and script shims after updating the AEL dependency, while preserving repo-owned `.ael/project-contract.md`, `.ael/settings.json`, and `.ael/config.local.json`.

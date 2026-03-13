@@ -12,10 +12,11 @@ import {
   type AgentDefinition,
   type AgentExecutionConfig,
   type ConfigInspectionResult,
-  type RuntimePlatform,
   type WorkItemFieldValue,
 } from './config.js';
 import type { AgentKey, AzureIdentity, CommandResult } from './ado-cli-types.js';
+import { resolveCommandInvocation, resolveConfiguredExecutionPlatform } from './command-runtime.js';
+export { resolveCommandInvocation, resolveConfiguredExecutionPlatform } from './command-runtime.js';
 
 export const CONFIG_DISCOVERY = discoverConfigPath();
 export const CONFIG_PATH = CONFIG_DISCOVERY.path;
@@ -30,7 +31,6 @@ export const TAG_ALIAS_MAP: Record<string, string> = {
   coverage: 'coverage-policy',
   tokens: 'token-efficiency',
 };
-const WINDOWS_SHELL_COMMANDS = new Set(['az', 'git', 'curl']);
 
 export function fail(message: string): never {
   console.error(`agent-execution: ${message}`);
@@ -218,61 +218,6 @@ export function normalizeAgent(
   fail(
     `unsupported --agent "${value}". Use one of: ${config.agents.map((agent) => agent.key).join(', ')}.`,
   );
-}
-
-export function resolveCommandInvocation(
-  args: string[],
-  platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env,
-): { command: string; args: string[] } {
-  const override = resolveCommandOverride(args, platform, env);
-  if (override) return override;
-
-  if (platform === 'win32' && WINDOWS_SHELL_COMMANDS.has(args[0]?.toLowerCase() ?? '')) {
-    return {
-      command: 'cmd.exe',
-      args: ['/d', '/s', '/c', ...args.map(escapeWindowsShellArg)],
-    };
-  }
-  return {
-    command: args[0],
-    args: args.slice(1),
-  };
-}
-
-function escapeWindowsShellArg(arg: string): string {
-  return arg.replaceAll(/[()%!^&|]/g, (match) => `^${match}`);
-}
-
-function resolveCommandOverride(
-  args: string[],
-  platform: string,
-  env: NodeJS.ProcessEnv,
-): { command: string; args: string[] } | undefined {
-  const rawCommand = args[0]?.trim();
-  if (!rawCommand) return undefined;
-
-  const override = env[`AEL_CMD_${rawCommand.toUpperCase()}`]?.trim();
-  if (!override) return undefined;
-
-  if (/\.(?:[cm]?js)$/i.test(override)) {
-    return {
-      command: process.execPath,
-      args: [override, ...args.slice(1)],
-    };
-  }
-
-  if (platform === 'win32' && /\.(?:cmd|bat)$/i.test(override)) {
-    return {
-      command: 'cmd.exe',
-      args: ['/d', '/s', '/c', override, ...args.slice(1).map(escapeWindowsShellArg)],
-    };
-  }
-
-  return {
-    command: override,
-    args: args.slice(1),
-  };
 }
 
 export function runCommand(args: string[]): CommandResult {
@@ -637,19 +582,8 @@ export function printCheck(label: string, ok: boolean, detail: string): void {
 }
 
 function resolveExecutionPlatform(env: NodeJS.ProcessEnv = process.env): NodeJS.Platform {
-  const configured = normalizeRuntimePlatform(
+  return resolveConfiguredExecutionPlatform(
     env.AEL_PLATFORM?.trim() || readRuntimePlatformFromPath(CONFIG_PATH),
+    process.platform,
   );
-  if (configured === 'windows') return 'win32';
-  if (configured === 'mac') return 'darwin';
-  if (configured === 'linux') return 'linux';
-  return process.platform;
-}
-
-function normalizeRuntimePlatform(value: string | RuntimePlatform | undefined): RuntimePlatform {
-  const normalized = value?.trim().toLowerCase();
-  if (normalized === 'windows' || normalized === 'mac' || normalized === 'linux') {
-    return normalized;
-  }
-  return 'auto';
 }

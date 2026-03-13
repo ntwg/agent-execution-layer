@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveCommandInvocation } from '../scripts/lib/ado-cli-runtime.js';
+import {
+  resolveCommandInvocation,
+  resolveCommandRuntimeProfile,
+  resolveConfiguredExecutionPlatform,
+} from '../scripts/lib/command-runtime.js';
 
 test('resolveCommandInvocation keeps non-Windows commands unchanged', () => {
   assert.deepEqual(resolveCommandInvocation(['git', 'status'], 'linux'), {
+    command: 'git',
+    args: ['status'],
+  });
+});
+
+test('resolveCommandInvocation keeps Mac command execution direct', () => {
+  assert.deepEqual(resolveCommandInvocation(['git', 'status'], 'darwin'), {
     command: 'git',
     args: ['status'],
   });
@@ -59,4 +70,16 @@ test('resolveCommandInvocation honors JavaScript command overrides', () => {
       args: ['C:\\stubs\\git.js', 'status'],
     },
   );
+});
+
+test('resolveConfiguredExecutionPlatform maps configured mac and windows overrides', () => {
+  assert.equal(resolveConfiguredExecutionPlatform('mac', 'win32'), 'darwin');
+  assert.equal(resolveConfiguredExecutionPlatform('windows', 'darwin'), 'win32');
+  assert.equal(resolveConfiguredExecutionPlatform('linux', 'darwin'), 'linux');
+});
+
+test('resolveCommandRuntimeProfile exposes explicit platform profiles', () => {
+  assert.equal(resolveCommandRuntimeProfile('darwin').key, 'mac');
+  assert.equal(resolveCommandRuntimeProfile('linux').key, 'linux');
+  assert.equal(resolveCommandRuntimeProfile('win32').key, 'windows');
 });
