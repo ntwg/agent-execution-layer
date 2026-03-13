@@ -21,6 +21,7 @@ import {
   azJson,
   buildFieldPairs,
   configuredAgentKeys,
+  configuredHumanBlockTags,
   currentBranchName,
   devopsRestJson,
   ensureModeEnabled,
@@ -30,8 +31,10 @@ import {
   getAgentDefinition,
   getAgentTag,
   getDefaultAgentKey,
+  getHumanBlockTag,
   hasFlag,
   isRecord,
+  isHumanBlockedTag,
   mergeFieldDefaults,
   normalizeAgent,
   normalizeTags,
@@ -47,6 +50,7 @@ import {
   replaceWorkItemTagsExact,
   resolveBaseBranch,
   resolveTargetBranch,
+  resolveWorkItemTypeFromKind,
   runCommand,
   saveConfig,
   shell,
@@ -263,7 +267,10 @@ export function addRelationTargets(
 export function getOpenPredecessorIds(config: AgentExecutionConfig, id: number): number[] {
   const relations = listWorkItemRelations(config, id);
   const predecessorIds = relations
-    .filter((relation) => relation.rel === 'System.LinkTypes.Dependency-Reverse')
+    .filter(
+      (relation) =>
+        relation.rel === 'System.LinkTypes.Dependency-Reverse' || relation.rel === 'predecessor',
+    )
     .map((relation) => relation.targetId)
     .filter((value): value is number => Number.isFinite(value));
 
@@ -271,6 +278,56 @@ export function getOpenPredecessorIds(config: AgentExecutionConfig, id: number):
     const item = getWorkItem(config, predecessorId);
     return getWorkItemStateValue(item) !== config.stateMap.done;
   });
+}
+
+function relationMatches(relationRel: string, expected: string[]): boolean {
+  const normalized = relationRel.trim().toLowerCase();
+  return expected.some((candidate) => normalized === candidate.trim().toLowerCase());
+}
+
+function isHumanBlockReason(
+  value: string | undefined,
+): value is 'waiting-on-human' | 'human-approval-needed' | 'external-setup-needed' {
+  return (
+    value === 'waiting-on-human' ||
+    value === 'human-approval-needed' ||
+    value === 'external-setup-needed'
+  );
+}
+
+export function getParentWorkItemId(config: AgentExecutionConfig, id: number): number | undefined {
+  const relations = listWorkItemRelations(config, id);
+  return relations.find((relation) =>
+    relationMatches(relation.rel, ['parent', 'System.LinkTypes.Hierarchy-Reverse']),
+  )?.targetId;
+}
+
+export function getRelatedWorkItemIds(config: AgentExecutionConfig, id: number): number[] {
+  const relations = listWorkItemRelations(config, id);
+  return Array.from(
+    new Set(
+      relations
+        .filter((relation) =>
+          relationMatches(relation.rel, ['related', 'System.LinkTypes.Related']),
+        )
+        .map((relation) => relation.targetId)
+        .filter((value): value is number => Number.isFinite(value)),
+    ),
+  );
+}
+
+export function getPredecessorWorkItemIds(config: AgentExecutionConfig, id: number): number[] {
+  const relations = listWorkItemRelations(config, id);
+  return Array.from(
+    new Set(
+      relations
+        .filter((relation) =>
+          relationMatches(relation.rel, ['predecessor', 'System.LinkTypes.Dependency-Reverse']),
+        )
+        .map((relation) => relation.targetId)
+        .filter((value): value is number => Number.isFinite(value)),
+    ),
+  );
 }
 
 export function getLinkedPullRequestIds(config: AgentExecutionConfig, id: number): number[] {
@@ -583,7 +640,8 @@ export function commandCreate(config: AgentExecutionConfig, args: string[]): voi
     mappedTables: parseListArg(parseArgValue(args, '--mapped-tables')),
     acceptance: parseListArg(parseArgValue(args, '--acceptance')),
   });
-  const itemType = parseArgValue(args, '--type') ?? config.defaultWorkItemType;
+  const kind = normalizeText(parseArgValue(args, '--kind'));
+  const itemType = resolveWorkItemTypeFromKind(config, kind, parseArgValue(args, '--type'));
   const parentIdRaw = parseArgValue(args, '--parent');
   const parentId = parentIdRaw ? Number.parseInt(parentIdRaw, 10) : undefined;
   if (parentIdRaw && !Number.isFinite(parentId)) {
@@ -640,6 +698,7 @@ export function commandCreate(config: AgentExecutionConfig, args: string[]): voi
       ok: true,
       workItem: {
         id: workItemId,
+        ...(kind ? { kind } : {}),
         type: itemType,
         title,
         url: workItemUrl,
@@ -664,6 +723,31 @@ export function commandCreate(config: AgentExecutionConfig, args: string[]): voi
   if (dependsOnIds.length > 0) console.log(`Depends on: ${dependsOnIds.join(', ')}`);
   if (relatedIds.length > 0) console.log(`Related: ${relatedIds.join(', ')}`);
   console.log(`URL: ${workItemUrl}`);
+}
+
+function updateWorkItemStateAndTags(
+  config: AgentExecutionConfig,
+  id: number,
+  state: string | undefined,
+  tags: string[],
+  note: string | undefined,
+): void {
+  const updateArgs = [
+    'boards',
+    'work-item',
+    'update',
+    '--id',
+    String(id),
+    '--fields',
+    `System.Tags=${tags.join(';')}`,
+  ];
+  if (state) {
+    updateArgs.push('--state', state);
+  }
+  if (note) {
+    updateArgs.push('--discussion', note);
+  }
+  azJson(config, updateArgs);
 }
 
 function claimWorkItem(
@@ -696,12 +780,10 @@ function claimWorkItem(
     String(id),
     '--state',
     config.stateMap.active,
-    '--fields',
-    `System.Tags=${mergedTags.join(';')}`,
   ];
+  updateArgs.push('--fields', `System.Tags=${mergedTags.join(';')}`);
   if (assignedTo) updateArgs.push('--assigned-to', assignedTo);
   if (note) updateArgs.push('--discussion', note);
-
   azJson(config, updateArgs);
   return {
     id,
@@ -711,6 +793,96 @@ function claimWorkItem(
     ...(note ? { note } : {}),
     tags: mergedTags,
   };
+}
+
+export function commandBlock(config: AgentExecutionConfig, args: string[]): void {
+  ensureModeEnabled(config, args, 'block');
+  const idRaw = parseArgValue(args, '--id');
+  if (!idRaw) fail('block requires --id <workItemId>.');
+  const id = Number.parseInt(idRaw, 10);
+  if (!Number.isFinite(id)) fail(`invalid --id "${idRaw}".`);
+
+  const reasonRaw = normalizeText(parseArgValue(args, '--reason'));
+  if (!isHumanBlockReason(reasonRaw)) {
+    fail('block requires --reason waiting-on-human|human-approval-needed|external-setup-needed.');
+  }
+
+  const note = normalizeText(parseArgValue(args, '--note'));
+  const item = getWorkItem(config, id);
+  const existingTags = getWorkItemTags(config, id);
+  const mergedTags = normalizeTags([
+    ...existingTags.filter((tag) => !isHumanBlockedTag(config, tag)),
+    ...config.sharedTags,
+    getHumanBlockTag(config, reasonRaw),
+  ]);
+  const discussion =
+    note ?? `Marked blocked on human gate: ${getHumanBlockTag(config, reasonRaw)}.`;
+  updateWorkItemStateAndTags(
+    config,
+    id,
+    getWorkItemStateValue(item) || config.stateMap.active,
+    mergedTags,
+    discussion,
+  );
+
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      id,
+      state: getWorkItemStateValue(item) || config.stateMap.active,
+      reason: reasonRaw,
+      tags: mergedTags,
+      ...(note ? { note } : {}),
+    });
+    return;
+  }
+  console.log(`Marked work item #${id} blocked: ${reasonRaw}`);
+}
+
+export function commandUnblock(config: AgentExecutionConfig, args: string[]): void {
+  ensureModeEnabled(config, args, 'unblock');
+  const idRaw = parseArgValue(args, '--id');
+  if (!idRaw) fail('unblock requires --id <workItemId>.');
+  const id = Number.parseInt(idRaw, 10);
+  if (!Number.isFinite(id)) fail(`invalid --id "${idRaw}".`);
+
+  const note = normalizeText(parseArgValue(args, '--note'));
+  const reasonRaw = normalizeText(parseArgValue(args, '--reason'));
+  const tagsToRemove =
+    isHumanBlockReason(reasonRaw) &&
+    configuredHumanBlockTags(config).includes(getHumanBlockTag(config, reasonRaw))
+      ? [getHumanBlockTag(config, reasonRaw)]
+      : configuredHumanBlockTags(config);
+
+  const item = getWorkItem(config, id);
+  const existingTags = getWorkItemTags(config, id);
+  const mergedTags = normalizeTags(
+    existingTags.filter(
+      (tag) =>
+        !tagsToRemove.some((candidate) => candidate.toLowerCase() === tag.trim().toLowerCase()),
+    ),
+  );
+  const discussion = note ?? 'Cleared human-block tag(s).';
+  updateWorkItemStateAndTags(
+    config,
+    id,
+    getWorkItemStateValue(item) || config.stateMap.active,
+    mergedTags,
+    discussion,
+  );
+
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      id,
+      state: getWorkItemStateValue(item) || config.stateMap.active,
+      tags: mergedTags,
+      removedTags: tagsToRemove,
+      ...(note ? { note } : {}),
+    });
+    return;
+  }
+  console.log(`Cleared human-block tags for work item #${id}`);
 }
 
 export function commandClaim(config: AgentExecutionConfig, args: string[]): void {

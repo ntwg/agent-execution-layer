@@ -23,11 +23,15 @@ npm run ael:validate-config
 npm run ael:backlog-create
 npm run ael:backlog-polish
 npm run ael:status
+npm run ael:block -- --id <id> --reason human-approval-needed
+npm run ael:unblock -- --id <id>
 npm run ael:create -- --title "<task>" --human-summary "<goal>" --agent-context "<technical context>"
 npm run ael:start -- --id <id> --agent codex --assigned-to "<ado-email-or-id>"
 npm run ael:commit -- --id <id> --all --message "<subject>"
 npm run ael:pr -- --id <id> --ready
 npm run ael:done -- --id <id> --summary "<outcome>" --impact "<business value>" --pr "<pr-id>"
+npm run ael:cleanup-branches -- --dry-run
+npm run ael:cleanup-prs -- --dry-run
 ```
 
 ## Work Item Structure
@@ -44,6 +48,8 @@ Work item descriptions and closeout comments are written as rich text so section
 ## PR Behavior
 
 PR descriptions are emitted as sectioned plain text with real line breaks.
+
+For multi-branch repos, `ael pr --target prod` or `ael pr --rollout` can target a configured rollout branch instead of the default development branch.
 
 Optional reviewer behavior:
 
@@ -81,9 +87,16 @@ npm run ael:report
 - open work items
 - active work by agent
 - blocked items
+- human-blocked items
+- overlap risks by configured area tag
 - active PRs
+- active PR target branches
 - stale active work
 - recently closed items
+
+Use `ael block` and `ael unblock` when work is waiting on a human or external setup so the reason is explicit in tags and reports instead of hidden in notes.
+
+Use `ael cleanup-branches --dry-run` and `ael cleanup-prs --dry-run` to identify merged branches, closed-item branches, stale drafts, closed-item PRs, and source branches that are no longer ahead of their targets.
 
 ## Config Validation
 
@@ -136,6 +149,10 @@ For agent-safe parsing, these commands support `--json`:
 - `retag`
 - `audit`
 - `report`
+- `block`
+- `unblock`
+- `cleanup-branches`
+- `cleanup-prs`
 - `enable`
 - `disable`
 
@@ -159,8 +176,10 @@ The long-term downstream integration model is package-based:
 - run `ael install` in the downstream repo root
 - use `npx ael ...` or the equivalent package-manager exec command by default
 - optionally preview downstream changes with `ael install --dry-run`
+- optionally print the managed/user-owned/local-only file contract with `ael install --explain`
 - optionally opt into repo-local `ael:*` package scripts with `ael install --with-scripts`
 - optionally point the discovery stub at a custom root file with `ael install --entrypoint-file <path>`
+- optionally refresh managed files later with `ael upgrade --explain`
 - optionally remove AEL later with `ael uninstall` or preview cleanup with `ael uninstall --dry-run`
 - customize backlog prompt templates in `.ael/settings.json`
 - keep repo-specific validation and escalation rules in the downstream repo

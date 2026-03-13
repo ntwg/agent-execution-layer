@@ -5,6 +5,10 @@ export type ReviewerMode = 'off' | 'assigned';
 export type PullRequestTagMode = 'non-agent' | 'all';
 export type WorkItemFieldValue = string | number | boolean;
 export type RuntimePlatform = 'auto' | 'windows' | 'mac' | 'linux';
+export type HumanBlockReason =
+  | 'waiting-on-human'
+  | 'human-approval-needed'
+  | 'external-setup-needed';
 
 export interface AgentExecutionConfig {
   configVersion: number;
@@ -37,6 +41,25 @@ export interface AgentExecutionConfig {
   reportDefaults: {
     staleDays: number;
     recentDays: number;
+  };
+  cleanupDefaults: {
+    staleBranchDays: number;
+    stalePullRequestDays: number;
+  };
+  coordination: {
+    areaTags: string[];
+    humanBlockReasons: Record<HumanBlockReason, string>;
+  };
+  branching: {
+    developmentBranches: string[];
+    rolloutBranches: string[];
+    branchAliases: Record<string, string>;
+  };
+  hierarchyDefaults: {
+    initiativeType: string;
+    featureType: string;
+    backlogItemType: string;
+    taskType: string;
   };
   runtime: {
     platform: RuntimePlatform;
@@ -85,7 +108,7 @@ export const DEFAULT_PR_DEFAULTS = {
   syncTagMode: 'non-agent' as PullRequestTagMode,
 };
 
-export const DEFAULT_CONFIG_VERSION = 4;
+export const DEFAULT_CONFIG_VERSION = 5;
 export const DEFAULT_RUNTIME_SETTINGS = {
   platform: 'auto' as RuntimePlatform,
 };
@@ -110,6 +133,27 @@ export const DEFAULT_REPORT_DEFAULTS = {
   recentDays: 7,
 };
 
+export const DEFAULT_CLEANUP_DEFAULTS = {
+  staleBranchDays: 14,
+  stalePullRequestDays: 7,
+};
+
+export const DEFAULT_COORDINATION_SETTINGS = {
+  areaTags: ['auth', 'db', 'frontend', 'pipeline', 'infra', 'migration'],
+  humanBlockReasons: {
+    'waiting-on-human': 'waiting-on-human',
+    'human-approval-needed': 'human-approval-needed',
+    'external-setup-needed': 'external-setup-needed',
+  } as Record<HumanBlockReason, string>,
+};
+
+export const DEFAULT_HIERARCHY_DEFAULTS = {
+  initiativeType: 'Initiative',
+  featureType: 'Feature',
+  backlogItemType: 'Product Backlog Item',
+  taskType: 'Task',
+};
+
 const CONFIG_TOP_LEVEL_KEYS = new Set([
   'configVersion',
   'enabled',
@@ -129,6 +173,10 @@ const CONFIG_TOP_LEVEL_KEYS = new Set([
   'stateMap',
   'prDefaults',
   'reportDefaults',
+  'cleanupDefaults',
+  'coordination',
+  'branching',
+  'hierarchyDefaults',
   'runtime',
 ]);
 
@@ -194,6 +242,7 @@ function normalizeConfig(raw: Record<string, unknown>): AgentExecutionConfig {
   const defaultAgent =
     normalizeAgentKey(typeof raw.defaultAgent === 'string' ? raw.defaultAgent : undefined) ||
     firstAgentKey;
+  const defaultBranch = String(parsed.defaultBranch ?? 'master');
   return {
     configVersion: Number.isInteger(parsed.configVersion)
       ? Number(parsed.configVersion)
@@ -202,7 +251,7 @@ function normalizeConfig(raw: Record<string, unknown>): AgentExecutionConfig {
     organizationUrl: String(parsed.organizationUrl ?? ''),
     project: String(parsed.project ?? ''),
     repositoryId: String(parsed.repositoryId ?? ''),
-    defaultBranch: String(parsed.defaultBranch ?? 'master'),
+    defaultBranch,
     defaultAgent,
     defaultWorkItemType: String(parsed.defaultWorkItemType ?? 'Task'),
     defaultAreaPath: String(parsed.defaultAreaPath ?? ''),
@@ -236,8 +285,156 @@ function normalizeConfig(raw: Record<string, unknown>): AgentExecutionConfig {
         ? Number(parsed.reportDefaults?.recentDays)
         : DEFAULT_REPORT_DEFAULTS.recentDays,
     },
+    cleanupDefaults: normalizeCleanupDefaults(parsed.cleanupDefaults),
+    coordination: normalizeCoordinationSettings(parsed.coordination),
+    branching: normalizeBranchingSettings(parsed.branching, defaultBranch),
+    hierarchyDefaults: normalizeHierarchyDefaults(parsed.hierarchyDefaults),
     runtime: normalizeRuntimeSettings(raw.runtime),
   };
+}
+
+function normalizeCleanupDefaults(raw: unknown): {
+  staleBranchDays: number;
+  stalePullRequestDays: number;
+} {
+  if (!isRecord(raw)) {
+    return { ...DEFAULT_CLEANUP_DEFAULTS };
+  }
+  return {
+    staleBranchDays: Number.isFinite(raw.staleBranchDays)
+      ? Number(raw.staleBranchDays)
+      : DEFAULT_CLEANUP_DEFAULTS.staleBranchDays,
+    stalePullRequestDays: Number.isFinite(raw.stalePullRequestDays)
+      ? Number(raw.stalePullRequestDays)
+      : DEFAULT_CLEANUP_DEFAULTS.stalePullRequestDays,
+  };
+}
+
+function normalizeStringRecord(raw: unknown): Record<string, string> {
+  if (!isRecord(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw)
+      .map(([key, value]) => [key.trim(), typeof value === 'string' ? value.trim() : ''])
+      .filter(([key, value]) => Boolean(key) && Boolean(value)),
+  );
+}
+
+function normalizeCoordinationSettings(raw: unknown): {
+  areaTags: string[];
+  humanBlockReasons: Record<HumanBlockReason, string>;
+} {
+  if (!isRecord(raw)) {
+    return {
+      areaTags: [...DEFAULT_COORDINATION_SETTINGS.areaTags],
+      humanBlockReasons: { ...DEFAULT_COORDINATION_SETTINGS.humanBlockReasons },
+    };
+  }
+
+  const rawHumanBlockReasons = normalizeStringRecord(raw.humanBlockReasons);
+  return {
+    areaTags: Array.isArray(raw.areaTags)
+      ? raw.areaTags
+          .map(String)
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [...DEFAULT_COORDINATION_SETTINGS.areaTags],
+    humanBlockReasons: {
+      'waiting-on-human':
+        rawHumanBlockReasons['waiting-on-human'] ||
+        DEFAULT_COORDINATION_SETTINGS.humanBlockReasons['waiting-on-human'],
+      'human-approval-needed':
+        rawHumanBlockReasons['human-approval-needed'] ||
+        DEFAULT_COORDINATION_SETTINGS.humanBlockReasons['human-approval-needed'],
+      'external-setup-needed':
+        rawHumanBlockReasons['external-setup-needed'] ||
+        DEFAULT_COORDINATION_SETTINGS.humanBlockReasons['external-setup-needed'],
+    },
+  };
+}
+
+function normalizeBranchingSettings(
+  raw: unknown,
+  defaultBranch: string,
+): {
+  developmentBranches: string[];
+  rolloutBranches: string[];
+  branchAliases: Record<string, string>;
+} {
+  const defaultDevelopmentBranches = [defaultBranch].filter(Boolean);
+  if (!isRecord(raw)) {
+    return {
+      developmentBranches: defaultDevelopmentBranches,
+      rolloutBranches: [],
+      branchAliases: {
+        default: defaultBranch,
+        ...(defaultBranch ? { [defaultBranch]: defaultBranch } : {}),
+      },
+    };
+  }
+
+  const developmentBranches = uniqueStringArray(
+    Array.isArray(raw.developmentBranches)
+      ? raw.developmentBranches.map(String)
+      : defaultDevelopmentBranches,
+  );
+  const rolloutBranches = uniqueStringArray(
+    Array.isArray(raw.rolloutBranches) ? raw.rolloutBranches.map(String) : [],
+  );
+  const branchAliases = normalizeStringRecord(raw.branchAliases);
+  for (const branch of [...developmentBranches, ...rolloutBranches]) {
+    if (!branchAliases[branch]) {
+      branchAliases[branch] = branch;
+    }
+  }
+  if (defaultBranch) {
+    branchAliases.default = branchAliases.default || defaultBranch;
+    branchAliases[defaultBranch] = branchAliases[defaultBranch] || defaultBranch;
+  }
+  return {
+    developmentBranches,
+    rolloutBranches,
+    branchAliases,
+  };
+}
+
+function normalizeHierarchyDefaults(raw: unknown): {
+  initiativeType: string;
+  featureType: string;
+  backlogItemType: string;
+  taskType: string;
+} {
+  if (!isRecord(raw)) {
+    return { ...DEFAULT_HIERARCHY_DEFAULTS };
+  }
+  return {
+    initiativeType:
+      typeof raw.initiativeType === 'string' && raw.initiativeType.trim()
+        ? raw.initiativeType.trim()
+        : DEFAULT_HIERARCHY_DEFAULTS.initiativeType,
+    featureType:
+      typeof raw.featureType === 'string' && raw.featureType.trim()
+        ? raw.featureType.trim()
+        : DEFAULT_HIERARCHY_DEFAULTS.featureType,
+    backlogItemType:
+      typeof raw.backlogItemType === 'string' && raw.backlogItemType.trim()
+        ? raw.backlogItemType.trim()
+        : DEFAULT_HIERARCHY_DEFAULTS.backlogItemType,
+    taskType:
+      typeof raw.taskType === 'string' && raw.taskType.trim()
+        ? raw.taskType.trim()
+        : DEFAULT_HIERARCHY_DEFAULTS.taskType,
+  };
+}
+
+function uniqueStringArray(values: string[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => value),
+    ),
+  );
 }
 
 function normalizeRuntimePlatformValue(value: unknown): RuntimePlatform {
@@ -565,6 +762,175 @@ function validateReportDefaults(
   }
 }
 
+function validateCleanupDefaults(
+  root: Record<string, unknown>,
+  errors: string[],
+  warnings: string[],
+): void {
+  const value = root.cleanupDefaults;
+  if (value === undefined) {
+    warnings.push('"cleanupDefaults" is missing; built-in cleanup defaults will be used.');
+    return;
+  }
+  if (!isRecord(value)) {
+    errors.push('"cleanupDefaults" must be an object.');
+    return;
+  }
+
+  for (const key of ['staleBranchDays', 'stalePullRequestDays']) {
+    const entry = value[key];
+    if (entry === undefined) continue;
+    if (!Number.isInteger(entry) || Number(entry) <= 0) {
+      errors.push(`"cleanupDefaults.${key}" must be a positive integer.`);
+    }
+  }
+
+  const unknownKeys = Object.keys(value).filter(
+    (key) => !['staleBranchDays', 'stalePullRequestDays'].includes(key),
+  );
+  if (unknownKeys.length > 0) {
+    warnings.push(`"cleanupDefaults" has unrecognized keys: ${unknownKeys.join(', ')}.`);
+  }
+}
+
+function validateBranchAliasMap(
+  value: unknown,
+  field: string,
+  errors: string[],
+  warnings: string[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push(`"${field}" must be an object keyed by alias.`);
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (!key.trim()) {
+      errors.push(`"${field}" contains an empty alias key.`);
+      continue;
+    }
+    if (typeof entry !== 'string' || !entry.trim()) {
+      errors.push(`"${field}.${key}" must be a non-empty string.`);
+    }
+  }
+
+  const unknownKeys = Object.keys(value).filter((key) => !key.trim());
+  if (unknownKeys.length > 0) {
+    warnings.push(`"${field}" has blank alias keys that will be ignored.`);
+  }
+}
+
+function validateCoordinationSettings(
+  root: Record<string, unknown>,
+  errors: string[],
+  warnings: string[],
+): void {
+  const value = root.coordination;
+  if (value === undefined) {
+    warnings.push('"coordination" is missing; built-in coordination defaults will be used.');
+    return;
+  }
+  if (!isRecord(value)) {
+    errors.push('"coordination" must be an object.');
+    return;
+  }
+
+  if (value.areaTags !== undefined) {
+    validateStringArray(value, 'areaTags', errors);
+  }
+
+  if (value.humanBlockReasons !== undefined) {
+    if (!isRecord(value.humanBlockReasons)) {
+      errors.push('"coordination.humanBlockReasons" must be an object keyed by block reason.');
+    } else {
+      for (const reason of ['waiting-on-human', 'human-approval-needed', 'external-setup-needed']) {
+        const entry = value.humanBlockReasons[reason];
+        if (entry !== undefined && (typeof entry !== 'string' || !entry.trim())) {
+          errors.push(`"coordination.humanBlockReasons.${reason}" must be a non-empty string.`);
+        }
+      }
+      const unknownKeys = Object.keys(value.humanBlockReasons).filter(
+        (key) =>
+          !['waiting-on-human', 'human-approval-needed', 'external-setup-needed'].includes(key),
+      );
+      if (unknownKeys.length > 0) {
+        warnings.push(
+          `"coordination.humanBlockReasons" has unrecognized keys: ${unknownKeys.join(', ')}.`,
+        );
+      }
+    }
+  }
+
+  const unknownKeys = Object.keys(value).filter(
+    (key) => !['areaTags', 'humanBlockReasons'].includes(key),
+  );
+  if (unknownKeys.length > 0) {
+    warnings.push(`"coordination" has unrecognized keys: ${unknownKeys.join(', ')}.`);
+  }
+}
+
+function validateBranchingSettings(
+  root: Record<string, unknown>,
+  errors: string[],
+  warnings: string[],
+): void {
+  const value = root.branching;
+  if (value === undefined) {
+    warnings.push('"branching" is missing; built-in branching defaults will be used.');
+    return;
+  }
+  if (!isRecord(value)) {
+    errors.push('"branching" must be an object.');
+    return;
+  }
+
+  if (value.developmentBranches !== undefined) {
+    validateStringArray(value, 'developmentBranches', errors);
+  }
+  if (value.rolloutBranches !== undefined) {
+    validateStringArray(value, 'rolloutBranches', errors);
+  }
+  validateBranchAliasMap(value.branchAliases, 'branching.branchAliases', errors, warnings);
+
+  const unknownKeys = Object.keys(value).filter(
+    (key) => !['developmentBranches', 'rolloutBranches', 'branchAliases'].includes(key),
+  );
+  if (unknownKeys.length > 0) {
+    warnings.push(`"branching" has unrecognized keys: ${unknownKeys.join(', ')}.`);
+  }
+}
+
+function validateHierarchyDefaults(
+  root: Record<string, unknown>,
+  errors: string[],
+  warnings: string[],
+): void {
+  const value = root.hierarchyDefaults;
+  if (value === undefined) {
+    warnings.push('"hierarchyDefaults" is missing; built-in hierarchy defaults will be used.');
+    return;
+  }
+  if (!isRecord(value)) {
+    errors.push('"hierarchyDefaults" must be an object.');
+    return;
+  }
+
+  for (const key of ['initiativeType', 'featureType', 'backlogItemType', 'taskType']) {
+    const entry = value[key];
+    if (entry !== undefined && (typeof entry !== 'string' || entry.trim().length === 0)) {
+      errors.push(`"hierarchyDefaults.${key}" must be a non-empty string.`);
+    }
+  }
+
+  const unknownKeys = Object.keys(value).filter(
+    (key) => !['initiativeType', 'featureType', 'backlogItemType', 'taskType'].includes(key),
+  );
+  if (unknownKeys.length > 0) {
+    warnings.push(`"hierarchyDefaults" has unrecognized keys: ${unknownKeys.join(', ')}.`);
+  }
+}
+
 function validateRuntimeSettings(
   root: Record<string, unknown>,
   errors: string[],
@@ -600,6 +966,7 @@ export function discoverConfigPath(
   envPath = process.env.AGENT_EXECUTION_CONFIG,
   fileExists: (path: string) => boolean = existsSync,
 ): ConfigPathDiscovery {
+  const configBaseDir = findGitRoot(cwd, fileExists) ?? cwd;
   if (envPath) {
     const path = resolve(cwd, envPath);
     return {
@@ -611,7 +978,7 @@ export function discoverConfigPath(
     };
   }
 
-  const preferredPath = resolve(cwd, DEFAULT_CONFIG_FILENAME);
+  const preferredPath = resolve(configBaseDir, DEFAULT_CONFIG_FILENAME);
   if (fileExists(preferredPath)) {
     return {
       path: preferredPath,
@@ -622,7 +989,7 @@ export function discoverConfigPath(
     };
   }
 
-  const rootLocalPath = resolve(cwd, ROOT_LOCAL_CONFIG_FILENAME);
+  const rootLocalPath = resolve(configBaseDir, ROOT_LOCAL_CONFIG_FILENAME);
   if (fileExists(rootLocalPath)) {
     return {
       path: rootLocalPath,
@@ -633,7 +1000,7 @@ export function discoverConfigPath(
     };
   }
 
-  const legacyPath = resolve(cwd, LEGACY_CONFIG_FILENAME);
+  const legacyPath = resolve(configBaseDir, LEGACY_CONFIG_FILENAME);
   if (fileExists(legacyPath)) {
     return {
       path: legacyPath,
@@ -651,6 +1018,23 @@ export function discoverConfigPath(
     preferredSource: 'local',
     usedLegacyFallback: false,
   };
+}
+
+function findGitRoot(
+  startDir: string,
+  fileExists: (path: string) => boolean = existsSync,
+): string | undefined {
+  let current = resolve(startDir);
+  while (true) {
+    if (fileExists(resolve(current, '.git'))) {
+      return current;
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      return undefined;
+    }
+    current = parent;
+  }
 }
 
 export function inspectConfigAtPath(
@@ -736,6 +1120,10 @@ export function inspectConfigAtPath(
     validateStateMap(parsed, errors, warnings);
     validatePrDefaults(parsed, errors, warnings);
     validateReportDefaults(parsed, errors, warnings);
+    validateCleanupDefaults(parsed, errors, warnings);
+    validateCoordinationSettings(parsed, errors, warnings);
+    validateBranchingSettings(parsed, errors, warnings);
+    validateHierarchyDefaults(parsed, errors, warnings);
     validateRuntimeSettings(parsed, errors, warnings);
 
     const normalized = normalizeConfig(parsed);

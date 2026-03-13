@@ -44,11 +44,15 @@ npm run ael:doctor
 npm run ael:validate-config
 npm run ael:status
 npm run ael:help
+npm run ael:block -- --id <id> --reason human-approval-needed
+npm run ael:unblock -- --id <id>
 npm run ael:create -- --title "<task>" --human-summary "<goal>" --agent-context "<technical context>"
 npm run ael:start -- --id <id> --agent codex --assigned-to "<human>"
 npm run ael:commit -- --id <id> --all --message "<subject>"
 npm run ael:pr -- --id <id> --ready
 npm run ael:done -- --id <id> --summary "<outcome>" --impact "<business value>"
+npm run ael:cleanup-branches -- --dry-run
+npm run ael:cleanup-prs -- --dry-run
 npm run ael:audit -- --state open --limit 100
 npm run ael:report
 ```
@@ -103,9 +107,9 @@ When preparing an upstream PR:
 Until this repo is more fully productized, prioritize:
 
 1. confirming the downstream installed-package path in a clean repo
-2. deciding final publish posture and package visibility
-3. expanding automated CLI coverage where downstream adoption exposes real gaps
-4. keeping the `.ael/` downstream layout stable and easy for zero-context agents to discover
+2. keeping cleanup, human-blocked, overlap-reporting, and rollout-branch flows stable across Windows and macOS at the same time
+3. deciding final publish posture and package visibility
+4. expanding automated CLI coverage where downstream adoption exposes real gaps
 5. keeping any future GitHub support scoped behind Azure DevOps-first design
 
 ## References

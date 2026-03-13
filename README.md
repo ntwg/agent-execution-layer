@@ -24,15 +24,18 @@ If you want to preview the downstream file changes first, run `npx ael install -
 
 - Creates and updates Azure DevOps work items with a standard two-audience structure
 - Claims work for specific agents while keeping the responsible human in `Assigned To`
+- Marks work as explicitly human-blocked with first-class reasons like `waiting-on-human`, `human-approval-needed`, and `external-setup-needed`
 - Creates linked branches and enforces `AB#<id>` commit discipline
-- Opens linked PRs with optional human reviewers and synced PR tags
+- Opens linked PRs with optional human reviewers, synced PR tags, and rollout-aware target branch aliases
 - Adds structured completion summaries before closing work items
 - Supports config-driven extra Azure DevOps field defaults on create and done
+- Supports hierarchy-aware work creation with config-backed `initiative`, `feature`, `backlog`, and `task` kinds
 - Validates the active config shape before operational commands run
 - Bootstraps config from Azure login or PAT-backed Azure DevOps access plus repo/project detection with `ael init`
 - Runs preflight and read-only smoke checks with `ael doctor` and `ael smoke`, including branch policy and PR readiness checks
-- Audits Azure DevOps drift and can repair safe issues like formatting, inferred missing PR links, and PR tag sync
-- Produces a quick human-readable status report for active work, blocked items, PRs, and recent completions
+- Audits Azure DevOps drift and can repair safe issues like formatting, inferred missing PR links, PR tag sync, and overlap reporting
+- Produces a quick human-readable status report for active work, blocked items, overlap risks, PR targets, hierarchy counts, and recent completions
+- Identifies stale branches and PRs with first-class cleanup commands
 - Renders editable backlog-analysis prompts with `ael backlog-create` and `ael backlog-polish`
 
 ## Current Backend
@@ -44,7 +47,7 @@ This repo no longer ships a checked-in active target config. Run `npm run ael:in
 
 The long-term adoption model is package-based: install AEL in the downstream repo and call the `ael` bin entrypoint from that repo. See [docs/ADOPTING-AEL.md](docs/ADOPTING-AEL.md).
 
-The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, `.ael/project-contract.md`, and `.ael/settings.json`. Pass `--with-scripts` if the downstream repo also wants the full `package.json` `ael:*` workflow shortcut set, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, or `--dry-run` if you want a preview before writing anything. After updating the AEL dependency in a downstream repo, run `ael upgrade` to refresh AEL-managed files without overwriting `.ael/project-contract.md`, `.ael/settings.json`, or `.ael/config.local.json`.
+The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, `.ael/project-contract.md`, and `.ael/settings.json`. Pass `--with-scripts` if the downstream repo also wants the full `package.json` `ael:*` workflow shortcut set, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, `--dry-run` if you want a preview before writing anything, or `--explain` if you want a managed-vs-user-owned ownership summary. After updating the AEL dependency in a downstream repo, run `ael upgrade` to refresh AEL-managed files without overwriting `.ael/project-contract.md`, `.ael/settings.json`, or `.ael/config.local.json`, and use `ael upgrade --explain` when you want the file-ownership breakdown.
 
 If you want a copyable reference layout, start with [examples/downstream-minimal](examples/downstream-minimal).
 If you want the script-driven variant, use [examples/downstream-with-scripts](examples/downstream-with-scripts).
@@ -61,6 +64,8 @@ The most common first fixes are:
 - install the Azure DevOps Azure CLI extension if `doctor` reports missing `az devops`
 - use `ael install --entrypoint-file <path>` or `--no-root-agents` when the repo already owns its root instructions
 - edit `.ael/settings.json` if you want to customize the backlog-analysis prompts
+- use `ael block` / `ael unblock` when work is waiting on a human gate instead of leaving the reason implicit
+- use `ael cleanup-branches --dry-run` and `ael cleanup-prs --dry-run` after a burst of agent work
 - use `ael uninstall --dry-run` before cleanup if you want to see exactly what AEL would remove
 
 This repo also exposes `npm run ael:*` scripts for local development. The older `npm run ado:*` aliases remain only for compatibility.
@@ -118,11 +123,15 @@ npm run ael:backlog-create
 npm run ael:backlog-polish
 npm run ael:enable
 npm run ael:disable
+npm run ael:block -- --id <id> --reason human-approval-needed
+npm run ael:unblock -- --id <id>
 npm run ael:create -- --title "<task>" --human-summary "<goal>" --agent-context "<technical context>"
 npm run ael:start -- --id <id> --agent codex --assigned-to "<human>"
 npm run ael:commit -- --id <id> --all --message "<subject>"
 npm run ael:pr -- --id <id> --ready
 npm run ael:done -- --id <id> --summary "<outcome>" --impact "<business value>"
+npm run ael:cleanup-branches -- --dry-run
+npm run ael:cleanup-prs -- --dry-run
 npm run ael:audit -- --state open --limit 100
 npm run ael:report
 ```
@@ -133,6 +142,7 @@ npm run ael:report
 - `--reviewer "<email-or-ado-id>"` adds a specific human reviewer
 - `--reviewer assigned` uses the work item assignee
 - `--no-reviewer` forces no reviewer even if config defaults change later
+- `--target prod` or `--rollout` lets PRs use configured rollout branches instead of always targeting the default branch
 - PR tag sync is on by default and mirrors linked work item tags onto the PR
 - assignee and reviewer identities are resolved through Azure DevOps before write operations run
 
@@ -146,13 +156,16 @@ npm run ael:report
 - `npm run ael:init` bootstraps a config from Azure DevOps and git remote context, auto-detects repo ID plus default area/iteration paths, and can run fully non-interactively with flags
 - `npm run ael:doctor` checks git context, Azure CLI or PAT auth, config validity, project access, repository access, configured identities, branch policies, and default branch reachability
 - `npm run ael:doctor -- --adoption` checks that a downstream repo's `.ael` install contract is wired correctly
+- `npm run ael:block` and `npm run ael:unblock` provide first-class human-gate workflow states
 - `npm run ael:backlog-create` renders the editable prompt for finding gaps and creating new backlog items
 - `npm run ael:backlog-polish` renders the editable prompt for refining existing backlog items
 - `npx ael install --dry-run` previews downstream adoption changes without mutating the repo
 - `npx ael upgrade` refreshes AEL-managed downstream files after dependency updates while preserving repo-owned `.ael/project-contract.md`, `.ael/settings.json`, and `.ael/config.local.json`
+- `npx ael install --explain`, `npx ael upgrade --explain`, and `npx ael uninstall --explain` print the managed/user-owned/local-only file contract
 - `npx ael uninstall` removes AEL-managed downstream files and exact-match `ael:*` script shims
+- `npx ael cleanup-branches` and `npx ael cleanup-prs` identify stale workflow residue before it turns into repo noise
 - `npm run ael:smoke` runs the doctor flow plus read-only work item queries, PR list queries, and active PR merge-readiness inspection
-- `status`, `validate-config`, `backlog-create`, `backlog-polish`, `init`, `doctor`, `smoke`, `upgrade`, `list`, `next`, `create`, `claim`, `branch`, `start`, `commit`, `pr`, `done`, `retag`, `audit`, `report`, `enable`, and `disable` all support `--json` for agent-safe parsing
+- `status`, `validate-config`, `backlog-create`, `backlog-polish`, `init`, `doctor`, `smoke`, `upgrade`, `list`, `next`, `create`, `claim`, `branch`, `start`, `commit`, `pr`, `done`, `retag`, `audit`, `report`, `enable`, `disable`, `block`, `unblock`, `cleanup-branches`, and `cleanup-prs` all support `--json` for agent-safe parsing
 
 ## Config Shape
 
@@ -161,6 +174,10 @@ npm run ael:report
 - `agents` is an explicit list of agent definitions with `key`, `tag`, `branchPrefix`, and `defaultAssignee`
 - `defaultAgent` is the fallback for commands that can infer an agent
 - `workItemFieldDefaults.create` and `workItemFieldDefaults.done` can stamp extra Azure DevOps field values during item creation and closeout
+- `cleanupDefaults` controls stale-branch and stale-PR cleanup thresholds
+- `coordination.areaTags` and `coordination.humanBlockReasons` drive overlap-aware reporting and explicit human-block tags
+- `branching` config defines development branches, rollout branches, and branch aliases like `prod`
+- `hierarchyDefaults` maps AEL work kinds like `feature` or `backlog` to your Azure DevOps work item types
 - `runtime.platform` lets a local config pin command behavior to `auto`, `windows`, `mac`, or `linux`
 
 ## Files
@@ -170,6 +187,7 @@ npm run ael:report
 - `scripts/lib/ado-cli-runtime.ts`: shared CLI/runtime helpers
 - `scripts/lib/ado-cli-bootstrap.ts`: status, init, doctor, and help flows
 - `scripts/lib/ado-cli-workflow.ts`: work-item, branch, commit, PR, and done flows
+- `scripts/lib/ado-cli-cleanup.ts`: stale branch and PR cleanup flows
 - `scripts/lib/ado-cli-reporting.ts`: retag, list, next, audit, and report flows
 - `scripts/lib/ado-cli-install.ts`: downstream install/bootstrap flow
 - `scripts/lib/ado-cli-types.ts`: internal workflow types

@@ -133,9 +133,38 @@ export interface WorkItemSummary {
   state: string;
   priority?: number;
   blocked: boolean;
+  humanBlocked?: boolean;
+  humanBlockTags?: string[];
+  areaTags?: string[];
   agentTag?: string;
   assignedTo?: string;
+  workItemType?: string;
+  parentId?: number;
+  predecessorIds?: number[];
+  relatedIds?: number[];
   title: string;
+}
+
+export interface BranchCleanupCandidate {
+  branch: string;
+  remote: boolean;
+  merged: boolean;
+  staleDays?: number;
+  workItemId?: number;
+  workItemState?: string;
+  reason: string;
+}
+
+export interface PullRequestCleanupCandidate {
+  pullRequestId: number;
+  title: string;
+  sourceBranch: string;
+  targetBranch: string;
+  isDraft: boolean;
+  status: string;
+  workItemIds: number[];
+  reason: string;
+  staleDays?: number;
 }
 
 export interface InstallScriptConflict {
@@ -164,6 +193,11 @@ export interface InstallSummary {
     updated: string[];
     unchanged: string[];
   };
+  ownership: {
+    managedFiles: string[];
+    userOwnedFiles: string[];
+    localOnlyFiles: string[];
+  };
   nextSteps: string[];
 }
 
@@ -190,6 +224,11 @@ export interface UpgradeSummary {
     unchanged: string[];
     preserved: string[];
   };
+  ownership: {
+    managedFiles: string[];
+    userOwnedFiles: string[];
+    localOnlyFiles: string[];
+  };
   warnings: string[];
   nextSteps: string[];
 }
@@ -210,4 +249,9 @@ export interface UninstallSummary {
   };
   nextSteps: string[];
   warnings: string[];
+  ownership: {
+    managedFiles: string[];
+    userOwnedFiles: string[];
+    localOnlyFiles: string[];
+  };
 }

@@ -52,6 +52,7 @@ If a downstream repo wants repo-local script shortcuts, run `ael install --with-
 If a downstream repo wants the root discovery stub somewhere other than `AGENTS.md`, run `ael install --entrypoint-file <path>`.
 If a downstream repo already has its own root instruction file, run `ael install --no-root-agents` to keep AEL entirely under `.ael/`.
 If a downstream repo wants to see the exact changes before writing anything, run `ael install --dry-run`.
+If a downstream repo wants a clear ownership summary before adopting or refreshing AEL, run `ael install --explain` or `ael upgrade --explain`.
 After updating the AEL dependency in a downstream repo, run `ael upgrade` to refresh the managed AEL files in that repo.
 
 This repo is now package-ready with an `ael` bin entrypoint. It is still marked `private` until publish timing and package visibility are finalized.
@@ -88,6 +89,7 @@ If the repo prefers `npm run ael:*` scripts, use `ael install --with-scripts` in
 If the repo already manages its own root `AGENTS.md`, use `ael install --no-root-agents` and point that existing file at `.ael/agent-guide.md`.
 If the installed AEL version changes later, run `ael upgrade` before `ael doctor --adoption` so the downstream repo picks up the latest managed stubs and script shims.
 If you want to remove AEL later, use `ael uninstall` or preview the cleanup with `ael uninstall --dry-run`.
+If the repo uses multiple long-lived branches, set `.ael/config.local.json` `branching.rolloutBranches` and `branching.branchAliases` so agents can use `ael pr --rollout` and `ael cleanup-prs` consistently.
 
 ## What AEL Owns
 
@@ -148,8 +150,9 @@ Optional standard mode:
 
 - `ael install --with-scripts` also adds repo-local `ael:*` package scripts
 - `ael install --dry-run` previews the exact files and scripts AEL would touch
+- `ael install --explain` and `ael upgrade --explain` print which files AEL manages directly versus which files remain repo-owned or local-only
 - `ael upgrade` refreshes AEL-managed files after an AEL package update while preserving repo-owned `.ael/project-contract.md`, `.ael/settings.json`, and `.ael/config.local.json`
-- script mode exposes the full repo-local `ael:*` workflow shortcut set, including `ael:backlog-create`, `ael:backlog-polish`, `ael:claim`, `ael:prioritize`, `ael:link`, `ael:branch`, and `ael:retag`
+- script mode exposes the full repo-local `ael:*` workflow shortcut set, including `ael:backlog-create`, `ael:backlog-polish`, `ael:block`, `ael:unblock`, `ael:claim`, `ael:prioritize`, `ael:link`, `ael:branch`, `ael:retag`, `ael:cleanup-branches`, and `ael:cleanup-prs`
 
 Optional custom entrypoint mode:
 
@@ -191,6 +194,7 @@ Use [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for the common failure cases
 - Azure auth or repo-access failures during `doctor`
 - Windows or Mac command-routing issues
 - `ael uninstall` preserving customized files or scripts
+- `ael cleanup-branches` or `ael cleanup-prs` flagging stale workflow residue after heavy agent use
 
 ## Recommended Human Supervision Policy
 
@@ -200,6 +204,7 @@ Default recommendation for downstream repos:
 - require a human reviewer for merge
 - require human escalation for production-impacting changes
 - require human escalation when `doctor` fails or repo state is inconsistent
+- use `ael block` for human-gated work so approval/setup blockers are explicit to other agents
 - do not let the agent invent validation requirements; define them in the downstream project contract
 
 ## Upstream Feedback Loop

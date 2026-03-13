@@ -13,12 +13,15 @@ import type {
 import type { AgentExecutionConfig } from './config.js';
 import {
   azJson,
+  configuredAreaTags,
   configuredAgentTags,
+  configuredHumanBlockTags,
   ensureModeEnabled,
   escapedWiql,
   fail,
   getAgentTag,
   hasFlag,
+  isHumanBlockedTag,
   normalizeAgent,
   normalizeTags,
   parseArgValue,
@@ -36,7 +39,10 @@ import {
   formatIdentity,
   getLinkedPullRequestIds,
   getOpenPredecessorIds,
+  getParentWorkItemId,
+  getPredecessorWorkItemIds,
   getPullRequest,
+  getRelatedWorkItemIds,
   getWorkItem,
   getWorkItemPriorityValue,
   getWorkItemsBatch,
@@ -110,7 +116,11 @@ function findFirstUnblockedWorkItem(
   ids: number[],
 ): number | undefined {
   for (const id of ids) {
-    if (getOpenPredecessorIds(config, id).length === 0) {
+    const tags = getWorkItemTags(config, id);
+    if (
+      getOpenPredecessorIds(config, id).length === 0 &&
+      !tags.some((tag) => isHumanBlockedTag(config, tag))
+    ) {
       return id;
     }
   }
@@ -133,14 +143,33 @@ function summarizeWorkItem(
     typeof fields['System.Tags'] === 'string' ? fields['System.Tags'] : undefined,
   );
   const agentTag = tags.find((tag) => tag.toLowerCase().startsWith('agent:'));
-  const blockedValue = blocked ?? getOpenPredecessorIds(config, id).length > 0;
+  const areaTags = configuredAreaTags(config).filter((tag) =>
+    tags.some((existing) => existing.toLowerCase() === tag.toLowerCase()),
+  );
+  const humanBlockTags = configuredHumanBlockTags(config).filter((tag) =>
+    tags.some((existing) => existing.toLowerCase() === tag.toLowerCase()),
+  );
+  const humanBlocked = humanBlockTags.length > 0;
+  const predecessorIds = getPredecessorWorkItemIds(config, id);
+  const relatedIds = getRelatedWorkItemIds(config, id);
+  const parentId = getParentWorkItemId(config, id);
+  const blockedValue = blocked ?? (humanBlocked || getOpenPredecessorIds(config, id).length > 0);
   return {
     id,
     state: String(fields['System.State'] ?? ''),
     priority: getWorkItemPriorityValue(item),
     blocked: blockedValue,
+    ...(humanBlocked ? { humanBlocked } : {}),
+    ...(humanBlockTags.length > 0 ? { humanBlockTags } : {}),
+    ...(areaTags.length > 0 ? { areaTags } : {}),
     ...(agentTag ? { agentTag } : {}),
     ...(assignedTo ? { assignedTo } : {}),
+    ...(typeof fields['System.WorkItemType'] === 'string'
+      ? { workItemType: String(fields['System.WorkItemType']) }
+      : {}),
+    ...(Number.isFinite(parentId) ? { parentId } : {}),
+    ...(predecessorIds.length > 0 ? { predecessorIds } : {}),
+    ...(relatedIds.length > 0 ? { relatedIds } : {}),
     title: String(fields['System.Title'] ?? `Work item ${id}`),
   };
 }
@@ -164,10 +193,36 @@ function printWorkItems(config: AgentExecutionConfig, ids: number[]): void {
     const bits = [`#${summary.id}`, summary.state, summary.title];
     if (summary.priority !== undefined) bits.push(`P${summary.priority}`);
     if (summary.blocked) bits.push('blocked');
+    if (summary.humanBlocked) bits.push('human-blocked');
+    if (summary.workItemType) bits.push(summary.workItemType);
     if (summary.agentTag) bits.push(summary.agentTag);
+    if (summary.areaTags?.length) bits.push(`areas=${summary.areaTags.join(',')}`);
     if (summary.assignedTo) bits.push(summary.assignedTo);
+    if (summary.parentId !== undefined) bits.push(`parent=${summary.parentId}`);
     console.log(bits.join(' | '));
   }
+}
+
+function buildAreaOverlapSummaries(
+  config: AgentExecutionConfig,
+  summaries: WorkItemSummary[],
+): Array<{ tag: string; count: number; itemIds: number[] }> {
+  return configuredAreaTags(config)
+    .map((tag) => {
+      const itemIds = summaries
+        .filter((summary) =>
+          (summary.areaTags ?? []).some(
+            (candidate) => candidate.toLowerCase() === tag.toLowerCase(),
+          ),
+        )
+        .map((summary) => summary.id);
+      return {
+        tag,
+        count: itemIds.length,
+        itemIds,
+      };
+    })
+    .filter((entry) => entry.count > 1);
 }
 
 function parseDateValue(raw: unknown): Date | undefined {
@@ -439,6 +494,22 @@ export function commandAudit(config: AgentExecutionConfig, args: string[]): void
     }
   }
 
+  const activeOverlapSummaries = collectWorkItemSummaries(
+    config,
+    workItemIds.filter((id) => {
+      const item = getWorkItem(config, id);
+      return getWorkItemStateValue(item) === config.stateMap.active;
+    }),
+  );
+  for (const overlap of buildAreaOverlapSummaries(config, activeOverlapSummaries)) {
+    findings.push({
+      level: 'info',
+      type: 'area-overlap',
+      scope: `tag:${overlap.tag}`,
+      message: `${overlap.count} active work items share ${overlap.tag}: ${overlap.itemIds.map((id) => `#${id}`).join(', ')}.`,
+    });
+  }
+
   for (const pr of activePullRequests) {
     const prId = pr.pullRequestId;
     if (!Number.isFinite(prId)) continue;
@@ -586,9 +657,18 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
   const newIds = queryWorkItems(config, { state: 'new', limit: 200 });
   const activeIds = queryWorkItems(config, { state: 'active', limit: 200 });
   const doneIds = queryWorkItems(config, { state: 'done', limit: 200 });
-  const blockedIds = activeIds.filter((id) => getOpenPredecessorIds(config, id).length > 0);
   const now = new Date();
   const activeItems = getWorkItemsBatch(config, activeIds);
+  const activeSummaries = collectWorkItemSummaries(config, activeIds);
+  const humanBlockedIds = activeSummaries
+    .filter((summary) => summary.humanBlocked)
+    .map((summary) => summary.id);
+  const blockedIds = Array.from(
+    new Set([
+      ...activeIds.filter((id) => getOpenPredecessorIds(config, id).length > 0),
+      ...humanBlockedIds,
+    ]),
+  );
   const staleActiveIds = activeItems
     .filter((item) => {
       const changed = parseDateValue(item.fields?.['System.ChangedDate']);
@@ -622,7 +702,19 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
     }))
     .filter((item) => item.activeCount > 0);
   const blockedSummaries = collectWorkItemSummaries(config, blockedIds.slice(0, limit));
+  const humanBlockedSummaries = activeSummaries
+    .filter((summary) => summary.humanBlocked)
+    .slice(0, limit);
   const recentDoneSummaries = collectWorkItemSummaries(config, recentDoneIds.slice(0, limit));
+  const overlapAreas = buildAreaOverlapSummaries(config, activeSummaries);
+  const hierarchyCounts = Object.entries(
+    openIds.reduce<Record<string, number>>((counts, id) => {
+      const item = getWorkItem(config, id);
+      const type = String(item.fields?.['System.WorkItemType'] ?? 'Unknown');
+      counts[type] = (counts[type] ?? 0) + 1;
+      return counts;
+    }, {}),
+  ).map(([type, count]) => ({ type, count }));
   const activePullRequestSummaries = activePullRequests.slice(0, limit).map((pr) => ({
     pullRequestId: Number(pr.pullRequestId),
     title: String(pr.title ?? ''),
@@ -633,6 +725,12 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
     workItemCount: listPullRequestWorkItemIds(config, Number(pr.pullRequestId)).length,
     tags: listPullRequestLabels(config, Number(pr.pullRequestId)),
   }));
+  const branchTargets = Object.entries(
+    activePullRequestSummaries.reduce<Record<string, number>>((counts, pr) => {
+      counts[pr.targetBranch] = (counts[pr.targetBranch] ?? 0) + 1;
+      return counts;
+    }, {}),
+  ).map(([branch, count]) => ({ branch, count }));
 
   if (wantsJson(args)) {
     printJson({
@@ -642,15 +740,21 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
         new: newIds.length,
         active: activeIds.length,
         blocked: blockedIds.length,
+        humanBlocked: humanBlockedIds.length,
         activePullRequests: activePullRequests.length,
         staleActive: staleActiveIds.length,
         recentDone: recentDoneIds.length,
+        overlapAreas: overlapAreas.length,
       },
       staleDays,
       recentDays,
       agentWorkload,
       unclaimedNewCount,
       blockedItems: blockedSummaries,
+      humanBlockedItems: humanBlockedSummaries,
+      overlapAreas,
+      hierarchyCounts,
+      branchTargets,
       activePullRequests: activePullRequestSummaries,
       recentDone: recentDoneSummaries,
     });
@@ -662,6 +766,7 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
   console.log(`New work items: ${newIds.length} (${unclaimedNewCount} unclaimed)`);
   console.log(`Active work items: ${activeIds.length}`);
   console.log(`Blocked active items: ${blockedIds.length}`);
+  console.log(`Human-blocked active items: ${humanBlockedIds.length}`);
   console.log(`Active PRs: ${activePullRequests.length}`);
   console.log(`Stale active items (>= ${staleDays} days): ${staleActiveIds.length}`);
   console.log(`Recently done (<= ${recentDays} days): ${recentDoneIds.length}`);
@@ -679,6 +784,27 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
       config,
       blockedSummaries.map((item) => item.id),
     );
+  }
+
+  if (overlapAreas.length > 0) {
+    console.log('Area overlap risks:');
+    for (const overlap of overlapAreas) {
+      console.log(`- ${overlap.tag}: ${overlap.itemIds.map((id) => `#${id}`).join(', ')}`);
+    }
+  }
+
+  if (branchTargets.length > 0) {
+    console.log('Active PR targets:');
+    for (const branchTarget of branchTargets) {
+      console.log(`- ${branchTarget.branch}: ${branchTarget.count}`);
+    }
+  }
+
+  if (hierarchyCounts.length > 0) {
+    console.log('Open work by type:');
+    for (const item of hierarchyCounts) {
+      console.log(`- ${item.type}: ${item.count}`);
+    }
   }
 
   if (activePullRequests.length > 0) {

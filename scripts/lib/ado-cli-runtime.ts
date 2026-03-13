@@ -12,6 +12,7 @@ import {
   type AgentDefinition,
   type AgentExecutionConfig,
   type ConfigInspectionResult,
+  type HumanBlockReason,
   type WorkItemFieldValue,
 } from './config.js';
 import type { AgentKey, AzureIdentity, CommandResult } from './ado-cli-types.js';
@@ -295,6 +296,10 @@ export function getConfiguredPat(): string | undefined {
   return undefined;
 }
 
+export function getAuthMode(): 'pat' | 'azure-cli' {
+  return usesPatAuth() ? 'pat' : 'azure-cli';
+}
+
 export function usesPatAuth(): boolean {
   return Boolean(getConfiguredPat());
 }
@@ -470,12 +475,85 @@ export function configuredAgentTags(config: AgentExecutionConfig): string[] {
   return getConfiguredAgents(config).map((agent) => agent.tag);
 }
 
+export function configuredAreaTags(config: AgentExecutionConfig): string[] {
+  return normalizeTags(config.coordination.areaTags);
+}
+
+export function getHumanBlockTag(config: AgentExecutionConfig, reason: HumanBlockReason): string {
+  return normalizeTag(config.coordination.humanBlockReasons[reason] ?? reason);
+}
+
+export function configuredHumanBlockTags(config: AgentExecutionConfig): string[] {
+  return normalizeTags(
+    (Object.keys(config.coordination.humanBlockReasons) as HumanBlockReason[]).map((reason) =>
+      getHumanBlockTag(config, reason),
+    ),
+  );
+}
+
+export function isHumanBlockedTag(config: AgentExecutionConfig, tag: string): boolean {
+  const normalized = normalizeTag(tag);
+  return configuredHumanBlockTags(config).some(
+    (candidate) => candidate.toLowerCase() === normalized.toLowerCase(),
+  );
+}
+
+export function resolveBranchAlias(config: AgentExecutionConfig, rawBranch: string): string {
+  const trimmed = rawBranch.trim();
+  if (!trimmed) return trimmed;
+  const aliases = Object.entries(config.branching.branchAliases ?? {});
+  const match = aliases.find(([alias]) => alias.toLowerCase() === trimmed.toLowerCase());
+  return match?.[1] ?? trimmed;
+}
+
+function resolvePreferredRolloutBranch(config: AgentExecutionConfig): string | undefined {
+  return config.branching.rolloutBranches[0];
+}
+
 export function resolveBaseBranch(config: AgentExecutionConfig, args: string[]): string {
-  return parseArgValue(args, '--base') ?? config.defaultBranch;
+  const rawBranch =
+    parseArgValue(args, '--base') ??
+    parseArgValue(args, '--base-branch') ??
+    (hasFlag(args, '--rollout') ? resolvePreferredRolloutBranch(config) : undefined) ??
+    config.defaultBranch;
+  return resolveBranchAlias(config, rawBranch);
 }
 
 export function resolveTargetBranch(config: AgentExecutionConfig, args: string[]): string {
-  return parseArgValue(args, '--target-branch') ?? config.defaultBranch;
+  const rawBranch =
+    parseArgValue(args, '--target-branch') ??
+    parseArgValue(args, '--target') ??
+    (hasFlag(args, '--rollout') ? resolvePreferredRolloutBranch(config) : undefined) ??
+    config.defaultBranch;
+  return resolveBranchAlias(config, rawBranch);
+}
+
+export function resolveWorkItemTypeFromKind(
+  config: AgentExecutionConfig,
+  kind: string | undefined,
+  explicitType: string | undefined,
+): string {
+  if (explicitType?.trim()) {
+    return explicitType.trim();
+  }
+  const normalizedKind = kind?.trim().toLowerCase();
+  switch (normalizedKind) {
+    case 'initiative':
+      return config.hierarchyDefaults.initiativeType;
+    case 'feature':
+      return config.hierarchyDefaults.featureType;
+    case 'backlog':
+    case 'pbi':
+    case 'product-backlog-item':
+      return config.hierarchyDefaults.backlogItemType;
+    case 'task':
+      return config.hierarchyDefaults.taskType;
+    case undefined:
+    case '':
+      return config.defaultWorkItemType;
+    default:
+      fail(`unsupported --kind "${kind}". Use one of: initiative, feature, backlog, pbi, task.`);
+  }
 }
 
 export function serializeWorkItemFieldValue(value: WorkItemFieldValue): string {

@@ -22,6 +22,7 @@ Fill this out in each downstream repo that adopts AEL.
 - Required reviewer:
 - Draft PR required before review: yes/no
 - Auto-complete allowed: yes/no
+- Human-block reasons the repo expects agents to use:
 
 ## Escalation Rules
 
@@ -40,6 +41,8 @@ Agents must escalate to a human when:
 
 ## Deployment / Release Constraints
 
+- Development branches:
+- Rollout / production branches:
 - 
 - 
 

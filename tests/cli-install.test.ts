@@ -50,6 +50,7 @@ test('install writes downstream repo contract files without mutating package.jso
     rootInstructions: string;
     rootInstructionsPath?: string;
     scripts: { added: string[] };
+    ownership: { managedFiles: string[]; userOwnedFiles: string[]; localOnlyFiles: string[] };
     files: { created: string[]; updated: string[] };
     nextSteps: string[];
   };
@@ -65,6 +66,9 @@ test('install writes downstream repo contract files without mutating package.jso
   assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/install.json'));
   assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/project-contract.md'));
   assert.ok(pathListIncludesSuffix(summary.files.created, '.ael/settings.json'));
+  assert.ok(pathListIncludesSuffix(summary.ownership.managedFiles, '.ael/agent-guide.md'));
+  assert.ok(pathListIncludesSuffix(summary.ownership.userOwnedFiles, '.ael/project-contract.md'));
+  assert.ok(pathListIncludesSuffix(summary.ownership.localOnlyFiles, '.ael/config.local.json'));
   assert.deepEqual(summary.nextSteps.slice(-2), ['npx ael init', 'npx ael doctor']);
 
   const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
@@ -182,11 +186,15 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   assert.ok(summary.scripts.added.includes('ael:backlog-create'));
   assert.ok(summary.scripts.added.includes('ael:backlog-polish'));
   assert.ok(summary.scripts.added.includes('ael:init'));
+  assert.ok(summary.scripts.added.includes('ael:block'));
+  assert.ok(summary.scripts.added.includes('ael:unblock'));
   assert.ok(summary.scripts.added.includes('ael:claim'));
   assert.ok(summary.scripts.added.includes('ael:prioritize'));
   assert.ok(summary.scripts.added.includes('ael:link'));
   assert.ok(summary.scripts.added.includes('ael:branch'));
   assert.ok(summary.scripts.added.includes('ael:retag'));
+  assert.ok(summary.scripts.added.includes('ael:cleanup-branches'));
+  assert.ok(summary.scripts.added.includes('ael:cleanup-prs'));
 
   const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>;
@@ -198,11 +206,18 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   assert.equal(packageJson.scripts['ael:backlog-polish'], 'ael backlog-polish');
   assert.equal(packageJson.scripts['ael:status'], 'ael status --json');
   assert.equal(packageJson.scripts['ael:doctor'], 'ael doctor --json');
+  assert.equal(packageJson.scripts['ael:block'], 'ael block');
+  assert.equal(packageJson.scripts['ael:unblock'], 'ael unblock');
   assert.equal(packageJson.scripts['ael:claim'], 'ael claim');
   assert.equal(packageJson.scripts['ael:prioritize'], 'ael prioritize');
   assert.equal(packageJson.scripts['ael:link'], 'ael link');
   assert.equal(packageJson.scripts['ael:branch'], 'ael branch');
   assert.equal(packageJson.scripts['ael:retag'], 'ael retag');
+  assert.equal(
+    packageJson.scripts['ael:cleanup-branches'],
+    'ael cleanup-branches --dry-run --json',
+  );
+  assert.equal(packageJson.scripts['ael:cleanup-prs'], 'ael cleanup-prs --dry-run --json');
 
   const agents = readFileSync(join(workspace, 'AGENTS.md'), 'utf8');
   assert.match(agents, /npm run ael:status/);
@@ -489,6 +504,7 @@ test('upgrade refreshes managed files while preserving user-owned templates', (t
     defaults: { agentKey: string; defaultBranch: string };
     scripts: { added: string[]; updated: string[] };
     files: { updated: string[]; preserved: string[] };
+    ownership: { managedFiles: string[]; userOwnedFiles: string[]; localOnlyFiles: string[] };
   };
 
   assert.equal(summary.ok, true);
@@ -503,6 +519,7 @@ test('upgrade refreshes managed files while preserving user-owned templates', (t
   assert.ok(pathListIncludesSuffix(summary.files.updated, '.ael/install.json'));
   assert.ok(pathListIncludesSuffix(summary.files.preserved, '.ael/project-contract.md'));
   assert.ok(pathListIncludesSuffix(summary.files.preserved, '.ael/settings.json'));
+  assert.ok(pathListIncludesSuffix(summary.ownership.localOnlyFiles, '.ael/config.local.json'));
 
   const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>;
@@ -562,6 +579,7 @@ test('uninstall removes managed files and exact-match scripts from a downstream 
     dryRun: boolean;
     files: { removed: string[]; updated: string[] };
     scripts: { removed: string[]; preserved: string[] };
+    ownership: { managedFiles: string[]; userOwnedFiles: string[]; localOnlyFiles: string[] };
   };
 
   assert.equal(summary.ok, true);
@@ -577,9 +595,14 @@ test('uninstall removes managed files and exact-match scripts from a downstream 
   assert.ok(summary.scripts.removed.includes('ael:install'));
   assert.ok(summary.scripts.removed.includes('ael:upgrade'));
   assert.ok(summary.scripts.removed.includes('ael:uninstall'));
+  assert.ok(summary.scripts.removed.includes('ael:block'));
+  assert.ok(summary.scripts.removed.includes('ael:unblock'));
   assert.ok(summary.scripts.removed.includes('ael:backlog-create'));
   assert.ok(summary.scripts.removed.includes('ael:backlog-polish'));
+  assert.ok(summary.scripts.removed.includes('ael:cleanup-branches'));
+  assert.ok(summary.scripts.removed.includes('ael:cleanup-prs'));
   assert.equal(summary.scripts.preserved.length, 0);
+  assert.ok(pathListIncludesSuffix(summary.ownership.localOnlyFiles, '.ael/config.local.json'));
 
   assert.equal(existsSync(join(workspace, 'AGENTS.md')), false);
   assert.equal(existsSync(join(workspace, '.ael')), false);

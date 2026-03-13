@@ -8,6 +8,7 @@ import {
 } from './lib/ado-cli-bootstrap.js';
 import { commandBacklogCreate, commandBacklogPolish } from './lib/ado-cli-backlog.js';
 import { commandInstall, commandUninstall, commandUpgrade } from './lib/ado-cli-install.js';
+import { commandCleanupBranches, commandCleanupPullRequests } from './lib/ado-cli-cleanup.js';
 import {
   commandAudit,
   commandList,
@@ -19,6 +20,7 @@ import {
   commandBranch,
   commandClaim,
   commandCommit,
+  commandBlock,
   commandCreate,
   commandDisable,
   commandDone,
@@ -27,6 +29,7 @@ import {
   commandPr,
   commandPrioritize,
   commandStart,
+  commandUnblock,
 } from './lib/ado-cli-workflow.js';
 import { fail, loadConfig } from './lib/ado-cli-runtime.js';
 
@@ -75,6 +78,12 @@ async function main(): Promise<void> {
     case 'disable':
       commandDisable(loadConfig(), args);
       return;
+    case 'block':
+      commandBlock(loadConfig(), args);
+      return;
+    case 'unblock':
+      commandUnblock(loadConfig(), args);
+      return;
     case 'create':
       commandCreate(loadConfig(), args);
       return;
@@ -116,6 +125,14 @@ async function main(): Promise<void> {
       return;
     case 'report':
       commandReport(loadConfig(), args);
+      return;
+    case 'cleanup-branches':
+    case 'branch-cleanup':
+      commandCleanupBranches(loadConfig(), args);
+      return;
+    case 'cleanup-prs':
+    case 'pr-cleanup':
+      commandCleanupPullRequests(loadConfig(), args);
       return;
     default:
       printHelp();

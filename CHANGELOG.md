@@ -10,10 +10,19 @@ This project keeps a lightweight changelog.
 
 ## Unreleased
 
+## 0.4.0 - 2026-03-13
+
 - Extracted the low-level command runtime into explicit Windows/macOS/Linux profiles so platform-specific invocation behavior is centralized instead of being scattered through the CLI runtime helpers.
 - Expanded CI coverage to run format, lint, build, and test validation across Ubuntu, macOS, and Windows so cross-platform support is continuously verified.
 - Added `.gitattributes` line-ending normalization so cross-platform format checks stay stable when the repo is checked out on Windows.
 - Replaced the shell-globbed test command with a Node-based test runner so `npm test` behaves the same under Windows `cmd.exe`, macOS, and Linux shells.
+- Added repo-root config discovery so nested-folder command runs can still find `.ael/config.local.json` reliably inside the active git repo.
+- Added explicit human-block workflow commands (`block`, `unblock`) plus config-driven human-block tags so approvals and external setup needs are visible to other agents.
+- Added config-driven coordination, cleanup, branching, and hierarchy settings for area tags, stale cleanup thresholds, rollout branches, branch aliases, and hierarchy-aware work item kinds.
+- Added overlap-aware reporting, human-blocked item reporting, active PR target-branch summaries, and hierarchy counts so multi-agent coordination is easier to reason about.
+- Added first-class `cleanup-branches` and `cleanup-prs` commands with dry-run and JSON support for stale workflow cleanup.
+- Added rollout-aware branch targeting and hierarchy-aware `create --kind ...` support so multi-branch repos and deeper work structures are modeled directly.
+- Added `install --explain`, `upgrade --explain`, and `uninstall --explain` ownership summaries so downstream repos can see which AEL files are managed, repo-owned, or local-only before changes are applied.
 
 ## 0.3.0 - 2026-03-12
 

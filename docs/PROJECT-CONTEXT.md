@@ -19,9 +19,13 @@ The engine currently covers:
 - linked PR creation
 - optional PR reviewer assignment
 - PR tag sync from linked work item tags
+- explicit human-blocked workflow reasons
+- overlap-aware reporting from configured area tags
+- rollout-aware target branch aliases and cleanup helpers
 - closeout validation before marking work done
 - Azure DevOps audit and safe repair commands
 - Azure DevOps human-readable status reporting
+- stale branch and stale PR cleanup commands
 
 Current entrypoint:
 
@@ -32,6 +36,7 @@ Core internal modules:
 - `scripts/lib/ado-cli-runtime.ts`
 - `scripts/lib/ado-cli-bootstrap.ts`
 - `scripts/lib/ado-cli-workflow.ts`
+- `scripts/lib/ado-cli-cleanup.ts`
 - `scripts/lib/ado-cli-reporting.ts`
 - `scripts/lib/ado-cli-install.ts`
 - `scripts/lib/ado-cli-types.ts`
@@ -44,7 +49,7 @@ Core internal modules:
 
 ## Current State
 
-As of March 10, 2026:
+As of March 13, 2026:
 
 - the repo builds successfully
 - the automated test suite now covers config compatibility, PR description rendering, and stubbed `init`/`doctor` flows
@@ -69,6 +74,13 @@ As of March 10, 2026:
 - the repo is connected to both Azure DevOps and GitHub remotes
 - a full live Azure DevOps lifecycle pass has already exercised `init`, `doctor`, `smoke`, `create`, `claim`, `retag`, `start`, `branch`, `commit`, `pr`, `done`, `audit`, and `report`
 - the first live pass exposed and fixed real board-path defaulting and Azure query-shape issues
+- the runtime command layer is now validated in CI across Windows, macOS, and Linux
+- config discovery now prefers the git repo root so nested-folder command runs find `.ael/config.local.json` more reliably
+- work can now be explicitly blocked/unblocked with human-gate reasons instead of relying on generic blocked state alone
+- reporting now surfaces configured area-tag overlap risk, human-blocked items, active PR target branches, and open work by hierarchy type
+- branch and PR cleanup now exist as first-class commands with safe-by-default dry-run behavior
+- `create` now supports config-backed hierarchy kinds like `initiative`, `feature`, `backlog`, and `task`
+- downstream install/upgrade/uninstall now expose managed vs user-owned vs local-only file ownership with `--explain`
 
 Validated commands:
 
@@ -84,8 +96,12 @@ npm run ael:backlog-create
 npm run ael:backlog-polish
 npm run ael:status
 npm run ael:help
+npm run ael:block -- --id <id> --reason human-approval-needed
+npm run ael:unblock -- --id <id>
 npm run ael:report -- --limit 5
 npm run ael:audit -- --state open --limit 5
+npm run ael:cleanup-branches -- --dry-run
+npm run ael:cleanup-prs -- --dry-run
 npm run ael:create -- --title "<task>" --human-summary "<goal>" --agent-context "<context>"
 npm run ael:start -- --id <id> --agent codex
 npm run ael:commit -- --id <id> --all --message "<subject>"
@@ -102,7 +118,7 @@ Main remaining hardening gaps:
 1. decide when to remove `private` from `package.json` and publish formally
 2. keep public troubleshooting/adoption docs tight as real users exercise the install flow
 3. long-term optional GitHub code-host support is not started
-4. continue tightening module boundaries only when real downstream usage exposes pressure points
+4. keep cross-platform coverage and cleanup flows stable as real downstream repos exercise them
 
 ## Near-Term Priority
 
@@ -110,7 +126,7 @@ If continuing work in this repo, the highest-value next steps are:
 
 1. decide final publish posture and package visibility
 2. keep the `.ael/` downstream layout stable so zero-context agents have one consistent discovery path
-3. keep tightening module boundaries only if downstream adoption exposes real weak spots
+3. keep cleanup, human-block, overlap-reporting, and rollout-branch behavior stable across Windows and macOS at the same time
 4. decide whether later GitHub support is repo-host-only or full tracker parity
 5. keep troubleshooting and example coverage aligned with the real install modes
 

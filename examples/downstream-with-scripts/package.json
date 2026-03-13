@@ -15,6 +15,8 @@
     "ael:smoke": "ael smoke --json",
     "ael:enable": "ael enable --json",
     "ael:disable": "ael disable --json",
+    "ael:block": "ael block",
+    "ael:unblock": "ael unblock",
     "ael:list": "ael list --json",
     "ael:next": "ael next --json",
     "ael:create": "ael create",
@@ -27,6 +29,8 @@
     "ael:pr": "ael pr",
     "ael:done": "ael done",
     "ael:retag": "ael retag",
+    "ael:cleanup-branches": "ael cleanup-branches --dry-run --json",
+    "ael:cleanup-prs": "ael cleanup-prs --dry-run --json",
     "ael:audit": "ael audit",
     "ael:report": "ael report"
   }

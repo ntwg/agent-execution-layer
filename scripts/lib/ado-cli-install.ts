@@ -89,6 +89,12 @@ interface InstallTemplateContext {
   workflowBacklogPolishCommand: string;
 }
 
+interface OwnershipSummary {
+  managedFiles: string[];
+  userOwnedFiles: string[];
+  localOnlyFiles: string[];
+}
+
 function findPackageRoot(startDir: string): string {
   let current = startDir;
   while (true) {
@@ -503,6 +509,46 @@ function renderInstallManifest(summary: {
   );
 }
 
+function buildOwnershipSummary(args: {
+  workspace: string;
+  installMode: InstallMode;
+  rootInstructionsMode: RootInstructionsMode;
+  rootInstructionsPath: string;
+  packageJsonPath?: string;
+  manifest?: InstallManifest;
+}): OwnershipSummary {
+  const manifestFiles = args.manifest?.files;
+  return {
+    managedFiles: uniqueStrings([
+      ...(args.rootInstructionsMode === 'managed'
+        ? [resolve(args.workspace, args.rootInstructionsPath)]
+        : []),
+      ...(args.installMode === 'with-scripts' && args.packageJsonPath
+        ? [args.packageJsonPath]
+        : []),
+      resolve(args.workspace, manifestFiles?.gitignore ?? DEFAULT_AEL_GITIGNORE_FILENAME),
+      resolve(args.workspace, manifestFiles?.agentGuide ?? DEFAULT_AGENT_GUIDE_FILENAME),
+      resolve(args.workspace, DEFAULT_INSTALL_MANIFEST_FILENAME),
+    ]),
+    userOwnedFiles: uniqueStrings([
+      resolve(args.workspace, manifestFiles?.projectContract ?? DEFAULT_PROJECT_CONTRACT_FILENAME),
+      resolve(args.workspace, manifestFiles?.settings ?? DEFAULT_SETTINGS_FILENAME),
+      ...(args.rootInstructionsMode === 'external'
+        ? [resolve(args.workspace, args.rootInstructionsPath)]
+        : []),
+    ]),
+    localOnlyFiles: uniqueStrings([
+      resolve(args.workspace, manifestFiles?.config ?? DEFAULT_CONFIG_FILENAME),
+    ]),
+  };
+}
+
+function printOwnershipSummary(summary: OwnershipSummary): void {
+  console.log(`managed files: ${summary.managedFiles.join(', ')}`);
+  console.log(`user-owned files: ${summary.userOwnedFiles.join(', ')}`);
+  console.log(`local-only files: ${summary.localOnlyFiles.join(', ')}`);
+}
+
 function writeTemplateFile(
   path: string,
   content: string,
@@ -810,6 +856,13 @@ export function commandInstall(args: string[]): void {
       updated: [],
       unchanged: [],
     },
+    ownership: buildOwnershipSummary({
+      workspace,
+      installMode,
+      rootInstructionsMode: manageRootAgents ? 'managed' : 'external',
+      rootInstructionsPath: entrypoint.relativePath,
+      packageJsonPath: packageData.path,
+    }),
     nextSteps: [
       ...(manageRootAgents
         ? [`review ${entrypoint.absolutePath}`]
@@ -939,6 +992,9 @@ export function commandInstall(args: string[]): void {
   if (summary.files.unchanged.length > 0) {
     console.log(`files unchanged: ${summary.files.unchanged.join(', ')}`);
   }
+  if (hasFlag(args, '--explain')) {
+    printOwnershipSummary(summary.ownership);
+  }
   for (const nextStep of summary.nextSteps) {
     console.log(`next: ${nextStep}`);
   }
@@ -999,6 +1055,14 @@ export function commandUpgrade(args: string[]): void {
       unchanged: [],
       preserved: [],
     },
+    ownership: buildOwnershipSummary({
+      workspace,
+      installMode: installManifest.mode,
+      rootInstructionsMode: installManifest.rootInstructions.mode,
+      rootInstructionsPath: entrypoint.relativePath,
+      packageJsonPath: packageData.path,
+      manifest: installManifest,
+    }),
     warnings: [],
     nextSteps: [
       dryRun ? 'review the previewed managed-file changes' : 'review the repo diff',
@@ -1142,6 +1206,9 @@ export function commandUpgrade(args: string[]): void {
   if (summary.files.unchanged.length > 0) {
     console.log(`files unchanged: ${summary.files.unchanged.join(', ')}`);
   }
+  if (hasFlag(args, '--explain')) {
+    printOwnershipSummary(summary.ownership);
+  }
   for (const warning of summary.warnings) {
     console.log(`warning: ${warning}`);
   }
@@ -1186,6 +1253,14 @@ export function commandUninstall(args: string[]): void {
     },
     nextSteps: [],
     warnings: [],
+    ownership: buildOwnershipSummary({
+      workspace,
+      installMode,
+      rootInstructionsMode,
+      rootInstructionsPath: entrypoint.relativePath,
+      packageJsonPath: packageData.path,
+      manifest: installManifest,
+    }),
   };
 
   if (!installManifest) {
@@ -1291,6 +1366,9 @@ export function commandUninstall(args: string[]): void {
   }
   if (summary.scripts.preserved.length > 0) {
     console.log(`scripts preserved: ${summary.scripts.preserved.join(', ')}`);
+  }
+  if (hasFlag(args, '--explain')) {
+    printOwnershipSummary(summary.ownership);
   }
   for (const warning of summary.warnings) {
     console.log(`warning: ${warning}`);

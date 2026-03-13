@@ -17,8 +17,11 @@ import {
   DEFAULT_AEL_GITIGNORE_FILENAME,
   DEFAULT_AGENT_DEFINITIONS,
   DEFAULT_AGENT_GUIDE_FILENAME,
+  DEFAULT_CLEANUP_DEFAULTS,
   DEFAULT_CONFIG_FILENAME,
   DEFAULT_CONFIG_VERSION,
+  DEFAULT_COORDINATION_SETTINGS,
+  DEFAULT_HIERARCHY_DEFAULTS,
   DEFAULT_INSTALL_MANIFEST_FILENAME,
   DEFAULT_PR_DEFAULTS,
   DEFAULT_PROJECT_CONTRACT_FILENAME,
@@ -41,6 +44,7 @@ import {
   escapedWiql,
   fail,
   getAzureIdentity,
+  getAuthMode,
   getConfiguredPat,
   hasFlag,
   inspectConfig,
@@ -622,6 +626,13 @@ export function buildStatusPayload(): Record<string, unknown> {
   const inspection = inspectConfig();
   const payload: Record<string, unknown> = {
     backend: 'azure-devops',
+    auth: {
+      mode: getAuthMode(),
+      capabilities: {
+        pullRequestLabelWriteback: usesPatAuth(),
+        commentRepair: usesPatAuth(),
+      },
+    },
     configPath: CONFIG_PATH,
     validation: {
       ok: inspection.errors.length === 0,
@@ -697,6 +708,9 @@ export function printStatus(args: string[] = []): void {
   }
   console.log('=== AGENT EXECUTION LAYER ===');
   console.log('backend: Azure DevOps');
+  console.log(
+    `auth mode: ${getAuthMode()}${usesPatAuth() ? ' (PAT-backed label/comment repair enabled)' : ' (set AEL_ADO_PAT for PAT-only write-back features)'}`,
+  );
   console.log(`config: ${CONFIG_PATH}`);
   if (inspection.errors.length > 0) {
     console.log(
@@ -753,6 +767,21 @@ export function printStatus(args: string[] = []): void {
   );
   console.log(
     `report defaults: staleDays=${config.reportDefaults.staleDays}, recentDays=${config.reportDefaults.recentDays}`,
+  );
+  console.log(
+    `cleanup defaults: staleBranchDays=${config.cleanupDefaults.staleBranchDays}, stalePullRequestDays=${config.cleanupDefaults.stalePullRequestDays}`,
+  );
+  console.log(`coordination area tags: ${config.coordination.areaTags.join(', ') || '(none)'}`);
+  console.log(
+    `human-block tags: ${Object.entries(config.coordination.humanBlockReasons)
+      .map(([reason, tag]) => `${reason}=${tag}`)
+      .join(', ')}`,
+  );
+  console.log(
+    `branching: development=${config.branching.developmentBranches.join(', ') || '(none)'}, rollout=${config.branching.rolloutBranches.join(', ') || '(none)'}`,
+  );
+  console.log(
+    `hierarchy defaults: initiative=${config.hierarchyDefaults.initiativeType}, feature=${config.hierarchyDefaults.featureType}, backlog=${config.hierarchyDefaults.backlogItemType}, task=${config.hierarchyDefaults.taskType}`,
   );
   console.log(`runtime platform: ${config.runtime.platform}`);
   for (const nextStep of buildStatusNextSteps(inspection)) {
@@ -854,6 +883,12 @@ export async function commandInit(args: string[]): Promise<void> {
   let defaultIterationPath =
     parseArgValue(args, '--iteration-path')?.trim() ??
     (forceOverwrite ? undefined : existingValidConfig?.defaultIterationPath);
+  const areaTags = parseListArg(parseArgValue(args, '--area-tags'))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const rolloutBranches = parseListArg(parseArgValue(args, '--rollout-branches'))
+    .map((value) => value.trim())
+    .filter(Boolean);
   let agentKeys = parseAgentKeyList(parseArgValue(args, '--agents'));
   if (agentKeys.length === 0) {
     agentKeys =
@@ -945,6 +980,31 @@ export async function commandInit(args: string[]): Promise<void> {
     },
     prDefaults: existingValidConfig?.prDefaults ?? DEFAULT_PR_DEFAULTS,
     reportDefaults: existingValidConfig?.reportDefaults ?? DEFAULT_REPORT_DEFAULTS,
+    cleanupDefaults: existingValidConfig?.cleanupDefaults ?? DEFAULT_CLEANUP_DEFAULTS,
+    coordination: {
+      areaTags:
+        areaTags.length > 0
+          ? areaTags
+          : (existingValidConfig?.coordination.areaTags ?? [
+              ...DEFAULT_COORDINATION_SETTINGS.areaTags,
+            ]),
+      humanBlockReasons: existingValidConfig?.coordination.humanBlockReasons ?? {
+        ...DEFAULT_COORDINATION_SETTINGS.humanBlockReasons,
+      },
+    },
+    branching: {
+      developmentBranches: existingValidConfig?.branching.developmentBranches ?? [defaultBranch],
+      rolloutBranches:
+        rolloutBranches.length > 0
+          ? rolloutBranches
+          : (existingValidConfig?.branching.rolloutBranches ?? []),
+      branchAliases: existingValidConfig?.branching.branchAliases ?? {
+        default: defaultBranch,
+        [defaultBranch]: defaultBranch,
+        ...Object.fromEntries(rolloutBranches.map((branch) => [branch, branch])),
+      },
+    },
+    hierarchyDefaults: existingValidConfig?.hierarchyDefaults ?? DEFAULT_HIERARCHY_DEFAULTS,
     runtime: {
       platform:
         runtimePlatform === 'windows' || runtimePlatform === 'mac' || runtimePlatform === 'linux'
@@ -977,6 +1037,10 @@ export async function commandInit(args: string[]): Promise<void> {
       defaultIterationPath: config.defaultIterationPath,
       defaultAgent: config.defaultAgent,
       agents: config.agents.map((agent) => agent.key),
+      cleanupDefaults: config.cleanupDefaults,
+      coordination: config.coordination,
+      branching: config.branching,
+      hierarchyDefaults: config.hierarchyDefaults,
       runtime: config.runtime,
       warnings: inspection.warnings,
       nextSteps: [preferredWorkflowCommand('doctor')],
@@ -1000,6 +1064,8 @@ export async function commandInit(args: string[]): Promise<void> {
   console.log(`default iteration: ${config.defaultIterationPath}`);
   console.log(`default agent: ${config.defaultAgent}`);
   console.log(`agents: ${config.agents.map((agent) => agent.key).join(', ')}`);
+  console.log(`coordination area tags: ${config.coordination.areaTags.join(', ') || '(none)'}`);
+  console.log(`rollout branches: ${config.branching.rolloutBranches.join(', ') || '(none)'}`);
   console.log(`runtime platform: ${config.runtime.platform}`);
   if (inspection.warnings.length > 0) {
     for (const warning of inspection.warnings) {
@@ -1335,19 +1401,23 @@ export function printHelp(): void {
   console.log('  backlog-create [--json]');
   console.log('  backlog-polish [--json]');
   console.log(
-    '  install [--agent-key <agent-key>] [--default-branch <branch>] [--entrypoint-file <path>] [--with-scripts|--minimal] [--no-root-agents] [--dry-run] [--force] [--json]',
+    '  install [--agent-key <agent-key>] [--default-branch <branch>] [--entrypoint-file <path>] [--with-scripts|--minimal] [--no-root-agents] [--dry-run] [--explain] [--force] [--json]',
   );
-  console.log('  upgrade [--dry-run] [--json]');
-  console.log('  uninstall [--dry-run] [--json]');
+  console.log('  upgrade [--dry-run] [--explain] [--json]');
+  console.log('  uninstall [--dry-run] [--explain] [--json]');
   console.log(
-    '  init [--organization-url <url>] [--project <name>] [--repository <name>] [--repository-id <id>] [--default-branch <branch>] [--area-path "<path>"] [--iteration-path "<path>"] [--agents "codex;claude"] [--default-agent <agent-key>] [--platform auto|windows|mac|linux] [--force] [--json]',
+    '  init [--organization-url <url>] [--project <name>] [--repository <name>] [--repository-id <id>] [--default-branch <branch>] [--area-path "<path>"] [--iteration-path "<path>"] [--area-tags "auth;db"] [--rollout-branches "prod"] [--agents "codex;claude"] [--default-agent <agent-key>] [--platform auto|windows|mac|linux] [--force] [--json]',
   );
   console.log('  doctor [--smoke|--adoption] [--json]');
   console.log('  smoke [--json]');
   console.log('  enable [--json]');
   console.log('  disable [--json]');
   console.log(
-    '  create --title "<text>" [--assigned-to "<name>"] [--human-summary "<goal>"] [--agent-context "<technical implementation context>"] [--mapped-tables "db.schema.table;db.schema.table"] [--acceptance "item one;item two"] [--type Task] [--tags "a;b"] [--priority 1..4] [--parent 123] [--depends-on "123;124"] [--related "125;126"] [--json]',
+    '  block --id 123 --reason waiting-on-human|human-approval-needed|external-setup-needed [--note "<text>"] [--json]',
+  );
+  console.log('  unblock --id 123 [--reason <reason>] [--note "<text>"] [--json]');
+  console.log(
+    '  create --title "<text>" [--assigned-to "<name>"] [--human-summary "<goal>"] [--agent-context "<technical implementation context>"] [--mapped-tables "db.schema.table;db.schema.table"] [--acceptance "item one;item two"] [--kind initiative|feature|backlog|pbi|task] [--type Task] [--tags "a;b"] [--priority 1..4] [--parent 123] [--depends-on "123;124"] [--related "125;126"] [--json]',
   );
   console.log(
     '         legacy aliases: --summary -> --human-summary, --description -> --agent-context',
@@ -1356,20 +1426,20 @@ export function printHelp(): void {
     '  claim --id 123 [--agent <agent-key>] [--assigned-to "<name>"] [--note "<text>"] [--json]',
   );
   console.log(
-    '  start --id 123 [--agent <agent-key>] [--assigned-to "<name>"] [--branch-name "agent/123-task"] [--base <branch>] [--note "<text>"] [--json]',
+    '  start --id 123 [--agent <agent-key>] [--assigned-to "<name>"] [--branch-name "agent/123-task"] [--base <branch>] [--rollout] [--note "<text>"] [--json]',
   );
   console.log('  prioritize --id 123 --priority 1..4 [--json]');
   console.log(
     '  link --id 123 [--parent 100] [--depends-on "120;121"] [--related "122;123"] [--json]',
   );
   console.log(
-    '  branch --id 123 [--agent <agent-key>] [--branch-name "agent/123-task"] [--base <branch>] [--json]',
+    '  branch --id 123 [--agent <agent-key>] [--branch-name "agent/123-task"] [--base <branch>] [--rollout] [--json]',
   );
   console.log(
     '  commit --id 123 --message "<subject>" [--body "<details>"] [--all | --files "path1;path2"] [--json]',
   );
   console.log(
-    '  pr --id 123 [--title "<text>"] [--description "<text>"] [--target-branch <branch>] [--ready] [--auto-complete] [--reviewer "<name>|assigned"] [--no-reviewer] [--required-reviewer] [--sync-pr-tags|--no-sync-pr-tags] [--json]',
+    '  pr --id 123 [--title "<text>"] [--description "<text>"] [--target-branch <branch>] [--target <alias>] [--rollout] [--ready] [--auto-complete] [--reviewer "<name>|assigned"] [--no-reviewer] [--required-reviewer] [--sync-pr-tags|--no-sync-pr-tags] [--json]',
   );
   console.log(
     '  done --id 123 [--summary "<outcome>"] [--impact "<business value>"] [--mapped-tables "db.schema.table;db.schema.table"] [--checks "build;fixtures;smoke"] [--changed-files "path1;path2"] [--pr "1234"] [--note "<extra context>"] [--skip-link-checks] [--json]',
@@ -1381,6 +1451,10 @@ export function printHelp(): void {
     '  list [--agent <agent-key>] [--state new|active|done|open|all] [--limit 20] [--json]',
   );
   console.log('  next [--agent <agent-key>] [--json]');
+  console.log(
+    '  cleanup-branches [--base <branch>] [--rollout] [--local-only|--remote-only] [--stale-days 14] [--delete-local] [--delete-remote] [--force] [--dry-run] [--json]',
+  );
+  console.log('  cleanup-prs [--stale-days 7] [--abandon] [--dry-run] [--json]');
   console.log(
     '  audit [--id 123 | --ids "123;124"] [--state new|active|done|open|all] [--limit 50] [--stale-days 7] [--repair] [--repair-formatting] [--repair-pr-tags] [--repair-pr-links] [--json]',
   );

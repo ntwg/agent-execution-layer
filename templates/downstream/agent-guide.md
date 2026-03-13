@@ -29,6 +29,8 @@ Use this order unless the user explicitly directs otherwise:
 6. `{{WORKFLOW_PR_COMMAND}}`
 7. `{{WORKFLOW_DONE_COMMAND}}`
 
+If work cannot proceed without a human or external setup, use the repo's AEL entrypoint for `block` instead of leaving the item in a generic limbo state.
+
 ## Agent Key
 
 Use this agent key by default:
@@ -55,6 +57,8 @@ When you need to identify missing follow-up work or clean up the existing backlo
 - `{{WORKFLOW_AUDIT_COMMAND}}`
 - `{{WORKFLOW_BACKLOG_CREATE_COMMAND}}`
 - `{{WORKFLOW_BACKLOG_POLISH_COMMAND}}`
+
+After a burst of agent activity, also use the repo's AEL entrypoint for branch and PR cleanup previews before asking a human to remove stale workflow residue.
 
 ## Human Supervision
 

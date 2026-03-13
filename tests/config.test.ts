@@ -36,6 +36,21 @@ test('config discovery prefers local config and only falls back to legacy when n
   assert.equal(local.usedLegacyFallback, false);
 });
 
+test('config discovery prefers the repo root config when commands run from a nested folder', (t) => {
+  const dir = makeTempDir();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  mkdirSync(join(dir, '.git'), { recursive: true });
+  mkdirSync(dirname(join(dir, DEFAULT_CONFIG_FILENAME)), { recursive: true });
+  writeFileSync(join(dir, DEFAULT_CONFIG_FILENAME), '{}\n', 'utf8');
+  mkdirSync(join(dir, 'src', 'nested'), { recursive: true });
+
+  const nested = discoverConfigPath(join(dir, 'src', 'nested'), undefined);
+  assert.equal(nested.path, join(dir, DEFAULT_CONFIG_FILENAME));
+  assert.equal(nested.preferredPath, join(dir, DEFAULT_CONFIG_FILENAME));
+  assert.equal(nested.usedLegacyFallback, false);
+});
+
 test('legacy config still validates with warnings and branch fallback', (t) => {
   const dir = makeTempDir();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -104,7 +119,7 @@ test('config supports work item field defaults', (t) => {
     configPath,
     `${JSON.stringify(
       {
-        configVersion: 4,
+        configVersion: 5,
         enabled: true,
         organizationUrl: 'https://dev.azure.com/example-org',
         project: 'example-project',
@@ -137,6 +152,33 @@ test('config supports work item field defaults', (t) => {
           active: 'Active',
           done: 'Closed',
         },
+        cleanupDefaults: {
+          staleBranchDays: 10,
+          stalePullRequestDays: 5,
+        },
+        coordination: {
+          areaTags: ['auth', 'frontend'],
+          humanBlockReasons: {
+            'waiting-on-human': 'waiting-on-human',
+            'human-approval-needed': 'human-approval-needed',
+            'external-setup-needed': 'external-setup-needed',
+          },
+        },
+        branching: {
+          developmentBranches: ['main'],
+          rolloutBranches: ['prod'],
+          branchAliases: {
+            default: 'main',
+            main: 'main',
+            prod: 'prod',
+          },
+        },
+        hierarchyDefaults: {
+          initiativeType: 'Initiative',
+          featureType: 'Feature',
+          backlogItemType: 'Product Backlog Item',
+          taskType: 'Task',
+        },
         runtime: {
           platform: 'windows',
         },
@@ -155,5 +197,10 @@ test('config supports work item field defaults', (t) => {
     3,
   );
   assert.equal(inspection.config?.workItemFieldDefaults.done['Custom.VerifiedByHuman'], false);
+  assert.equal(inspection.config?.cleanupDefaults.staleBranchDays, 10);
+  assert.equal(inspection.config?.cleanupDefaults.stalePullRequestDays, 5);
+  assert.deepEqual(inspection.config?.coordination.areaTags, ['auth', 'frontend']);
+  assert.equal(inspection.config?.branching.rolloutBranches[0], 'prod');
+  assert.equal(inspection.config?.hierarchyDefaults.featureType, 'Feature');
   assert.equal(inspection.config?.runtime.platform, 'windows');
 });

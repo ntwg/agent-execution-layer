@@ -556,6 +556,33 @@ function writeConfig(workspace: string): void {
         },
         prDefaults: DEFAULT_PR_DEFAULTS,
         reportDefaults: DEFAULT_REPORT_DEFAULTS,
+        cleanupDefaults: {
+          staleBranchDays: 14,
+          stalePullRequestDays: 7,
+        },
+        coordination: {
+          areaTags: ['auth', 'db', 'frontend', 'pipeline', 'infra', 'migration'],
+          humanBlockReasons: {
+            'waiting-on-human': 'waiting-on-human',
+            'human-approval-needed': 'human-approval-needed',
+            'external-setup-needed': 'external-setup-needed',
+          },
+        },
+        branching: {
+          developmentBranches: ['main'],
+          rolloutBranches: ['prod'],
+          branchAliases: {
+            default: 'main',
+            main: 'main',
+            prod: 'prod',
+          },
+        },
+        hierarchyDefaults: {
+          initiativeType: 'Initiative',
+          featureType: 'Feature',
+          backlogItemType: 'Product Backlog Item',
+          taskType: 'Task',
+        },
       },
       null,
       2,
@@ -606,6 +633,8 @@ test('write-side commands emit structured json', (t) => {
         'Make command outputs machine-readable',
         '--agent-context',
         'Add --json support to mutating commands.',
+        '--kind',
+        'feature',
         '--priority',
         '1',
         '--tags',
@@ -620,6 +649,7 @@ test('write-side commands emit structured json', (t) => {
     workItem: {
       id: number;
       title: string;
+      kind?: string;
       type: string;
       priority?: number;
       tags: string[];
@@ -630,7 +660,8 @@ test('write-side commands emit structured json', (t) => {
   assert.equal(created.ok, true);
   assert.equal(created.workItem.id, 100);
   assert.equal(created.workItem.title, 'JSON command flow');
-  assert.equal(created.workItem.type, 'Task');
+  assert.equal(created.workItem.kind, 'feature');
+  assert.equal(created.workItem.type, 'Feature');
   assert.equal(created.workItem.priority, 1);
   assert.deepEqual(created.workItem.tags, ['agent-managed', 'automation', 'cli']);
   assert.equal(created.workItem.fieldsApplied['Custom.AgentManaged'], true);
@@ -667,6 +698,49 @@ test('write-side commands emit structured json', (t) => {
   assert.equal(claimed.state, 'Active');
   assert.equal(claimed.agent, 'codex');
   assert.ok(claimed.tags.includes('agent:codex'));
+
+  const blocked = JSON.parse(
+    runCli(
+      [
+        'block',
+        '--id',
+        '100',
+        '--reason',
+        'human-approval-needed',
+        '--note',
+        'Waiting for a human reviewer.',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
+    ok: boolean;
+    id: number;
+    reason: string;
+    tags: string[];
+  };
+  assert.equal(blocked.ok, true);
+  assert.equal(blocked.id, 100);
+  assert.equal(blocked.reason, 'human-approval-needed');
+  assert.ok(blocked.tags.includes('human-approval-needed'));
+
+  const unblocked = JSON.parse(
+    runCli(
+      ['unblock', '--id', '100', '--reason', 'human-approval-needed', '--json'],
+      workspace,
+      env,
+    ),
+  ) as {
+    ok: boolean;
+    id: number;
+    removedTags: string[];
+    tags: string[];
+  };
+  assert.equal(unblocked.ok, true);
+  assert.equal(unblocked.id, 100);
+  assert.deepEqual(unblocked.removedTags, ['human-approval-needed']);
+  assert.ok(!unblocked.tags.includes('human-approval-needed'));
 
   const branched = JSON.parse(
     runCli(
@@ -712,7 +786,11 @@ test('write-side commands emit structured json', (t) => {
   assert.equal(committed.addAll, true);
 
   const pullRequest = JSON.parse(
-    runCli(['pr', '--id', '100', '--ready', '--no-sync-pr-tags', '--json'], workspace, env),
+    runCli(
+      ['pr', '--id', '100', '--ready', '--target', 'prod', '--no-sync-pr-tags', '--json'],
+      workspace,
+      env,
+    ),
   ) as {
     ok: boolean;
     created: boolean;
@@ -728,12 +806,16 @@ test('write-side commands emit structured json', (t) => {
   assert.equal(pullRequest.pullRequestId, 200);
   assert.equal(pullRequest.draft, false);
   assert.equal(pullRequest.currentBranch, 'codex/100-json-command-flow');
-  assert.equal(pullRequest.targetBranch, 'main');
+  assert.equal(pullRequest.targetBranch, 'prod');
   assert.equal(pullRequest.syncPrTags, false);
   assert.ok(pullRequest.url);
 
   const existingPullRequest = JSON.parse(
-    runCli(['pr', '--id', '100', '--ready', '--no-sync-pr-tags', '--json'], workspace, env),
+    runCli(
+      ['pr', '--id', '100', '--ready', '--target', 'prod', '--no-sync-pr-tags', '--json'],
+      workspace,
+      env,
+    ),
   ) as {
     ok: boolean;
     created: boolean;
@@ -1047,6 +1129,10 @@ test('report, audit, and retag emit structured json', (t) => {
     agentWorkload: Array<{ agent: string; activeCount: number }>;
     unclaimedNewCount: number;
     blockedItems: Array<{ id: number }>;
+    humanBlockedItems: Array<{ id: number }>;
+    overlapAreas: Array<{ tag: string; count: number; itemIds: number[] }>;
+    hierarchyCounts: Array<{ type: string; count: number }>;
+    branchTargets: Array<{ branch: string; count: number }>;
     activePullRequests: Array<{ pullRequestId: number; workItemCount: number; tags: string[] }>;
     recentDone: Array<{ id: number }>;
   };
@@ -1056,9 +1142,11 @@ test('report, audit, and retag emit structured json', (t) => {
     new: 1,
     active: 2,
     blocked: 1,
+    humanBlocked: 0,
     activePullRequests: 1,
     staleActive: 2,
     recentDone: 1,
+    overlapAreas: 0,
   });
   assert.deepEqual(report.agentWorkload, [{ agent: 'codex', activeCount: 2 }]);
   assert.equal(report.unclaimedNewCount, 1);
@@ -1066,6 +1154,10 @@ test('report, audit, and retag emit structured json', (t) => {
     report.blockedItems.map((item) => item.id),
     [103],
   );
+  assert.deepEqual(report.humanBlockedItems, []);
+  assert.deepEqual(report.overlapAreas, []);
+  assert.deepEqual(report.branchTargets, [{ branch: 'refs/heads/main', count: 1 }]);
+  assert.deepEqual(report.hierarchyCounts, [{ type: 'Task', count: 3 }]);
   assert.equal(report.activePullRequests[0].pullRequestId, 200);
   assert.equal(report.activePullRequests[0].workItemCount, 1);
   assert.deepEqual(report.activePullRequests[0].tags, []);

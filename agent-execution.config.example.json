@@ -1,5 +1,5 @@
 {
-  "configVersion": 4,
+  "configVersion": 5,
   "enabled": true,
   "organizationUrl": "https://dev.azure.com/your-org",
   "project": "your-project",
@@ -42,6 +42,33 @@
   "reportDefaults": {
     "staleDays": 7,
     "recentDays": 7
+  },
+  "cleanupDefaults": {
+    "staleBranchDays": 14,
+    "stalePullRequestDays": 7
+  },
+  "coordination": {
+    "areaTags": ["auth", "db", "frontend", "pipeline", "infra", "migration"],
+    "humanBlockReasons": {
+      "waiting-on-human": "waiting-on-human",
+      "human-approval-needed": "human-approval-needed",
+      "external-setup-needed": "external-setup-needed"
+    }
+  },
+  "branching": {
+    "developmentBranches": ["main"],
+    "rolloutBranches": ["prod"],
+    "branchAliases": {
+      "default": "main",
+      "main": "main",
+      "prod": "prod"
+    }
+  },
+  "hierarchyDefaults": {
+    "initiativeType": "Initiative",
+    "featureType": "Feature",
+    "backlogItemType": "Product Backlog Item",
+    "taskType": "Task"
   },
   "runtime": {
     "platform": "auto"
