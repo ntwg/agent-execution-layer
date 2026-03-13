@@ -99,13 +99,15 @@ function installStubCommands(workspace: string): {
   binDir: string;
   gitStatePath: string;
   azStatePath: string;
+  gitCommandPath: string;
+  azCommandPath: string;
 } {
   const binDir = join(workspace, 'bin');
   const gitStatePath = join(workspace, 'git-state.json');
   const azStatePath = join(workspace, 'az-state.json');
   mkdirSync(binDir, { recursive: true });
 
-  writeCommandStub(
+  const gitCommandPath = writeCommandStub(
     binDir,
     'git',
     `#!/usr/bin/env node
@@ -176,7 +178,7 @@ if (args[0] === 'branch' && args[1] === '--show-current') {
 `,
   );
 
-  writeCommandStub(
+  const azCommandPath = writeCommandStub(
     binDir,
     'az',
     `#!/usr/bin/env node
@@ -247,7 +249,7 @@ if (args[0] === 'boards' && args[1] === 'work-item' && args[2] === 'show') {
 `,
   );
 
-  return { binDir, gitStatePath, azStatePath };
+  return { binDir, gitStatePath, azStatePath, gitCommandPath, azCommandPath };
 }
 
 function runCli(args: string[], workspace: string, extraEnv: Record<string, string>): string {
@@ -266,7 +268,8 @@ test('cleanup-branches identifies merged, closed-item, and stale branches and on
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
   writeConfig(workspace);
 
-  const { binDir, gitStatePath, azStatePath } = installStubCommands(workspace);
+  const { binDir, gitStatePath, azStatePath, gitCommandPath, azCommandPath } =
+    installStubCommands(workspace);
   writeFileSync(
     gitStatePath,
     `${JSON.stringify(
@@ -327,6 +330,8 @@ test('cleanup-branches identifies merged, closed-item, and stale branches and on
     PATH: prependPathEntry(binDir),
     AEL_CLEANUP_GIT_STATE: gitStatePath,
     AEL_CLEANUP_AZ_STATE: azStatePath,
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
   };
 
   const preview = JSON.parse(
@@ -383,7 +388,8 @@ test('cleanup-prs identifies stale drafts, closed-item PRs, and missing/fully-me
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
   writeConfig(workspace);
 
-  const { binDir, gitStatePath, azStatePath } = installStubCommands(workspace);
+  const { binDir, gitStatePath, azStatePath, gitCommandPath, azCommandPath } =
+    installStubCommands(workspace);
   writeFileSync(
     gitStatePath,
     `${JSON.stringify(
@@ -482,6 +488,8 @@ test('cleanup-prs identifies stale drafts, closed-item PRs, and missing/fully-me
     PATH: prependPathEntry(binDir),
     AEL_CLEANUP_GIT_STATE: gitStatePath,
     AEL_CLEANUP_AZ_STATE: azStatePath,
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
   };
 
   const preview = JSON.parse(runCli(['cleanup-prs', '--json'], workspace, env)) as {
