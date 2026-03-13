@@ -27,8 +27,24 @@ Recommended fix:
 
 1. run `ael doctor --adoption --json`
 2. inspect the failed check labels
-3. re-run `ael install --force`
-4. if the repo owns a custom root instructions file, re-run `ael install --entrypoint-file <path>` or `ael install --no-root-agents`
+3. if the package version changed, run `ael upgrade --dry-run` and then `ael upgrade`
+4. re-run `ael install --force` if the repo was never installed cleanly or the manifest is missing
+5. if the repo owns a custom root instructions file, re-run `ael install --entrypoint-file <path>` or `ael install --no-root-agents`
+
+## AEL was updated but the downstream repo still has stale files
+
+Typical causes:
+
+- the package dependency changed, but the repo never refreshed its managed AEL stubs
+- the repo uses script mode and is still carrying an older `ael:*` shim set
+- `.ael/install.json` predates the current install manifest shape
+
+Recommended fix:
+
+1. run `ael upgrade --dry-run --json`
+2. apply the refresh with `ael upgrade`
+3. run `ael doctor --adoption`
+4. if the refresh still fails because the install manifest is missing, re-run `ael install --force`
 
 ## `backlog-create` or `backlog-polish` output is not what you want
 

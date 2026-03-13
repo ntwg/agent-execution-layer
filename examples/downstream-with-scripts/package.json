@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "ael:install": "ael install --with-scripts",
+    "ael:upgrade": "ael upgrade",
     "ael:uninstall": "ael uninstall",
     "ael:help": "ael",
     "ael:status": "ael status --json",

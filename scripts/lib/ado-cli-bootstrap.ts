@@ -1337,6 +1337,7 @@ export function printHelp(): void {
   console.log(
     '  install [--agent-key <agent-key>] [--default-branch <branch>] [--entrypoint-file <path>] [--with-scripts|--minimal] [--no-root-agents] [--dry-run] [--force] [--json]',
   );
+  console.log('  upgrade [--dry-run] [--json]');
   console.log('  uninstall [--dry-run] [--json]');
   console.log(
     '  init [--organization-url <url>] [--project <name>] [--repository <name>] [--repository-id <id>] [--default-branch <branch>] [--area-path "<path>"] [--iteration-path "<path>"] [--agents "codex;claude"] [--default-agent <agent-key>] [--platform auto|windows|mac|linux] [--force] [--json]',
@@ -1374,7 +1375,7 @@ export function printHelp(): void {
     '  done --id 123 [--summary "<outcome>"] [--impact "<business value>"] [--mapped-tables "db.schema.table;db.schema.table"] [--checks "build;fixtures;smoke"] [--changed-files "path1;path2"] [--pr "1234"] [--note "<extra context>"] [--skip-link-checks] [--json]',
   );
   console.log(
-    '  retag [--id 123 | --ids "123;124"] [--state new|active|done|open|all] [--agent <agent-key>] [--limit 200] [--dry-run] [--json]',
+    '  retag [--id 123 | --ids "123;124"] [--state new|active|done|open|all] [--agent <agent-key>] [--tags "a;b"] [--limit 200] [--dry-run] [--json]',
   );
   console.log(
     '  list [--agent <agent-key>] [--state new|active|done|open|all] [--limit 20] [--json]',

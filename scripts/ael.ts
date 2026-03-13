@@ -7,7 +7,7 @@ import {
   printStatus,
 } from './lib/ado-cli-bootstrap.js';
 import { commandBacklogCreate, commandBacklogPolish } from './lib/ado-cli-backlog.js';
-import { commandInstall, commandUninstall } from './lib/ado-cli-install.js';
+import { commandInstall, commandUninstall, commandUpgrade } from './lib/ado-cli-install.js';
 import {
   commandAudit,
   commandList,
@@ -52,6 +52,10 @@ async function main(): Promise<void> {
       return;
     case 'install':
       commandInstall(args);
+      return;
+    case 'upgrade':
+    case 'update':
+      commandUpgrade(args);
       return;
     case 'uninstall':
       commandUninstall(args);

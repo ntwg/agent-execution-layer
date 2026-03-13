@@ -1,6 +1,6 @@
 {
   "name": "agent-execution-layer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Agent Execution Layer CLI for Azure DevOps-backed multi-agent delivery",
   "license": "MIT",
@@ -51,6 +51,7 @@
     "ael:init": "tsx scripts/ael.ts init",
     "ael:doctor": "tsx scripts/ael.ts doctor",
     "ael:smoke": "tsx scripts/ael.ts smoke",
+    "ael:upgrade": "tsx scripts/ael.ts upgrade",
     "ael:enable": "tsx scripts/ael.ts enable",
     "ael:disable": "tsx scripts/ael.ts disable",
     "ael:create": "tsx scripts/ael.ts create",
@@ -75,6 +76,7 @@
     "ado:init": "tsx scripts/ael.ts init",
     "ado:doctor": "tsx scripts/ael.ts doctor",
     "ado:smoke": "tsx scripts/ael.ts smoke",
+    "ado:upgrade": "tsx scripts/ael.ts upgrade",
     "ado:enable": "tsx scripts/ael.ts enable",
     "ado:disable": "tsx scripts/ael.ts disable",
     "ado:create": "tsx scripts/ael.ts create",

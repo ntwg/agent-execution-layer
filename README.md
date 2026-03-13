@@ -44,7 +44,7 @@ This repo no longer ships a checked-in active target config. Run `npm run ael:in
 
 The long-term adoption model is package-based: install AEL in the downstream repo and call the `ael` bin entrypoint from that repo. See [docs/ADOPTING-AEL.md](docs/ADOPTING-AEL.md).
 
-The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, `.ael/project-contract.md`, and `.ael/settings.json`. Pass `--with-scripts` if the downstream repo also wants the full `package.json` `ael:*` workflow shortcut set, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, or `--dry-run` if you want a preview before writing anything.
+The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, `.ael/project-contract.md`, and `.ael/settings.json`. Pass `--with-scripts` if the downstream repo also wants the full `package.json` `ael:*` workflow shortcut set, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, or `--dry-run` if you want a preview before writing anything. After updating the AEL dependency in a downstream repo, run `ael upgrade` to refresh AEL-managed files without overwriting `.ael/project-contract.md`, `.ael/settings.json`, or `.ael/config.local.json`.
 
 If you want a copyable reference layout, start with [examples/downstream-minimal](examples/downstream-minimal).
 If you want the script-driven variant, use [examples/downstream-with-scripts](examples/downstream-with-scripts).
@@ -56,6 +56,7 @@ Common adoption failures are documented in [docs/TROUBLESHOOTING.md](docs/TROUBL
 The most common first fixes are:
 
 - run `npx ael doctor --adoption` after `ael install`
+- run `npx ael upgrade --dry-run` before applying managed-file refreshes in an adopted repo
 - confirm `az login` or `AEL_ADO_PAT` is set before `ael init`
 - install the Azure DevOps Azure CLI extension if `doctor` reports missing `az devops`
 - use `ael install --entrypoint-file <path>` or `--no-root-agents` when the repo already owns its root instructions
@@ -148,9 +149,10 @@ npm run ael:report
 - `npm run ael:backlog-create` renders the editable prompt for finding gaps and creating new backlog items
 - `npm run ael:backlog-polish` renders the editable prompt for refining existing backlog items
 - `npx ael install --dry-run` previews downstream adoption changes without mutating the repo
+- `npx ael upgrade` refreshes AEL-managed downstream files after dependency updates while preserving repo-owned `.ael/project-contract.md`, `.ael/settings.json`, and `.ael/config.local.json`
 - `npx ael uninstall` removes AEL-managed downstream files and exact-match `ael:*` script shims
 - `npm run ael:smoke` runs the doctor flow plus read-only work item queries, PR list queries, and active PR merge-readiness inspection
-- `status`, `validate-config`, `backlog-create`, `backlog-polish`, `init`, `doctor`, `smoke`, `list`, `next`, `create`, `claim`, `branch`, `start`, `commit`, `pr`, `done`, `retag`, `audit`, `report`, `enable`, and `disable` all support `--json` for agent-safe parsing
+- `status`, `validate-config`, `backlog-create`, `backlog-polish`, `init`, `doctor`, `smoke`, `upgrade`, `list`, `next`, `create`, `claim`, `branch`, `start`, `commit`, `pr`, `done`, `retag`, `audit`, `report`, `enable`, and `disable` all support `--json` for agent-safe parsing
 
 ## Config Shape
 

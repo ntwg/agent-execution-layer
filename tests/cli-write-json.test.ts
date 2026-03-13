@@ -989,7 +989,11 @@ test('report, audit, and retag emit structured json', (t) => {
   };
 
   const retag = JSON.parse(
-    runCli(['retag', '--id', '101', '--dry-run', '--json'], workspace, env),
+    runCli(
+      ['retag', '--id', '101', '--tags', 'auth;frontend', '--dry-run', '--json'],
+      workspace,
+      env,
+    ),
   ) as {
     ok: boolean;
     dryRun: boolean;
@@ -1004,10 +1008,32 @@ test('report, audit, and retag emit structured json', (t) => {
   assert.deepEqual(retag.changes[0], {
     id: 101,
     before: [],
-    after: ['agent-managed'],
+    after: ['agent-managed', 'auth', 'frontend'],
     changed: true,
     applied: false,
   });
+
+  const appliedRetag = JSON.parse(
+    runCli(['retag', '--id', '101', '--tags', 'auth;frontend', '--json'], workspace, env),
+  ) as {
+    ok: boolean;
+    dryRun: boolean;
+    changedCount: number;
+    changes: Array<{ applied: boolean; after: string[] }>;
+  };
+  assert.equal(appliedRetag.ok, true);
+  assert.equal(appliedRetag.dryRun, false);
+  assert.equal(appliedRetag.changedCount, 1);
+  assert.equal(appliedRetag.changes[0]?.applied, true);
+  assert.deepEqual(appliedRetag.changes[0]?.after, ['agent-managed', 'auth', 'frontend']);
+
+  const azStateAfterRetag = JSON.parse(readFileSync(azStatePath, 'utf8')) as {
+    workItems: Record<string, { fields: Record<string, unknown> }>;
+  };
+  assert.equal(
+    azStateAfterRetag.workItems['101']?.fields['System.Tags'],
+    'agent-managed;auth;frontend',
+  );
 
   const report = JSON.parse(
     runCli(

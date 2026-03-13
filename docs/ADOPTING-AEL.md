@@ -52,6 +52,7 @@ If a downstream repo wants repo-local script shortcuts, run `ael install --with-
 If a downstream repo wants the root discovery stub somewhere other than `AGENTS.md`, run `ael install --entrypoint-file <path>`.
 If a downstream repo already has its own root instruction file, run `ael install --no-root-agents` to keep AEL entirely under `.ael/`.
 If a downstream repo wants to see the exact changes before writing anything, run `ael install --dry-run`.
+After updating the AEL dependency in a downstream repo, run `ael upgrade` to refresh the managed AEL files in that repo.
 
 This repo is now package-ready with an `ael` bin entrypoint. It is still marked `private` until publish timing and package visibility are finalized.
 
@@ -85,6 +86,7 @@ Minimum downstream setup:
 
 If the repo prefers `npm run ael:*` scripts, use `ael install --with-scripts` instead.
 If the repo already manages its own root `AGENTS.md`, use `ael install --no-root-agents` and point that existing file at `.ael/agent-guide.md`.
+If the installed AEL version changes later, run `ael upgrade` before `ael doctor --adoption` so the downstream repo picks up the latest managed stubs and script shims.
 If you want to remove AEL later, use `ael uninstall` or preview the cleanup with `ael uninstall --dry-run`.
 
 ## What AEL Owns
@@ -146,6 +148,7 @@ Optional standard mode:
 
 - `ael install --with-scripts` also adds repo-local `ael:*` package scripts
 - `ael install --dry-run` previews the exact files and scripts AEL would touch
+- `ael upgrade` refreshes AEL-managed files after an AEL package update while preserving repo-owned `.ael/project-contract.md`, `.ael/settings.json`, and `.ael/config.local.json`
 - script mode exposes the full repo-local `ael:*` workflow shortcut set, including `ael:backlog-create`, `ael:backlog-polish`, `ael:claim`, `ael:prioritize`, `ael:link`, `ael:branch`, and `ael:retag`
 
 Optional custom entrypoint mode:
@@ -159,6 +162,7 @@ Optional no-root mode:
 
 Cleanup mode:
 
+- `ael upgrade --dry-run` previews the managed-file refresh before changing the repo
 - `ael uninstall` removes AEL-managed downstream files and exact-match package-script shims
 - `ael uninstall --dry-run` previews that cleanup before changing the repo
 
@@ -182,6 +186,7 @@ Use [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for the common failure cases
 
 - `ael` command not found in the downstream repo
 - `ael doctor --adoption` failing after install
+- a downstream repo still showing stale AEL stubs after the package version changed
 - `ael init` not detecting the Azure DevOps target
 - Azure auth or repo-access failures during `doctor`
 - Windows or Mac command-routing issues

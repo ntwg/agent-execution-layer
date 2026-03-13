@@ -10,6 +10,11 @@ This project keeps a lightweight changelog.
 
 ## Unreleased
 
+## 0.3.0 - 2026-03-12
+
+- Added `ael upgrade` (plus `ael update` alias) so downstream repos can refresh AEL-managed files and script shims after updating the AEL dependency, while preserving repo-owned `.ael/project-contract.md`, `.ael/settings.json`, and `.ael/config.local.json`.
+- Fixed `ael retag --tags "a;b"` so explicit custom tags are actually written to Azure DevOps instead of reporting a false no-op after only normalizing shared tags.
+- Added repo-local `ael:upgrade` script shims for `--with-scripts` downstream installs and updated downstream examples/docs to describe the managed refresh workflow.
 - Fixed Windows Azure CLI command routing so WIQL operators like `<>` no longer break `report`, `audit`, and other query-heavy commands.
 - Reduced dependence on raw Azure DevOps REST calls for normal read/write flows, so `report`, `audit`, and `retag` work cleanly with standard `az login` auth.
 - Added local `runtime.platform` config support plus `ael init --platform ...` to pin Windows, Mac, or Linux behavior when auto-detect is not enough.

@@ -167,6 +167,33 @@ export interface InstallSummary {
   nextSteps: string[];
 }
 
+export interface UpgradeSummary {
+  ok: boolean;
+  dryRun: boolean;
+  mode: 'minimal' | 'with-scripts';
+  rootInstructions: 'managed' | 'external';
+  rootInstructionsPath?: string;
+  workspace: string;
+  packageJsonPath?: string;
+  defaults: {
+    agentKey: string;
+    defaultBranch: string;
+  };
+  scripts: {
+    added: string[];
+    updated: string[];
+    unchanged: string[];
+  };
+  files: {
+    created: string[];
+    updated: string[];
+    unchanged: string[];
+    preserved: string[];
+  };
+  warnings: string[];
+  nextSteps: string[];
+}
+
 export interface UninstallSummary {
   ok: boolean;
   dryRun: boolean;

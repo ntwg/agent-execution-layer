@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { InstallScriptConflict, InstallSummary, UninstallSummary } from './ado-cli-types.js';
+import type {
+  InstallScriptConflict,
+  InstallSummary,
+  UninstallSummary,
+  UpgradeSummary,
+} from './ado-cli-types.js';
 import {
   DEFAULT_AEL_GITIGNORE_FILENAME,
   DEFAULT_AGENT_GUIDE_FILENAME,
@@ -39,6 +44,10 @@ type RemovalStatus = 'removed' | 'updated' | 'unchanged';
 interface InstallManifest {
   manifestVersion: number;
   mode: InstallMode;
+  defaults: {
+    agentKey: string;
+    defaultBranch: string;
+  };
   rootInstructions: {
     mode: RootInstructionsMode;
     path: string;
@@ -55,6 +64,29 @@ interface InstallManifest {
 interface WorkspacePackageData {
   manifest: Record<string, unknown>;
   path?: string;
+}
+
+interface InstallTemplateContext {
+  agentKey: string;
+  repositoryName: string;
+  defaultBranch?: string;
+  buildCommand?: string;
+  unitTestCommand?: string;
+  integrationTestCommand?: string;
+  lintCommand?: string;
+  validationCommands: string[];
+  workflowStatusCommand: string;
+  workflowInitCommand: string;
+  workflowDoctorCommand: string;
+  workflowNextCommand: string;
+  workflowStartCommand: string;
+  workflowCommitCommand: string;
+  workflowPrCommand: string;
+  workflowDoneCommand: string;
+  workflowAuditCommand: string;
+  workflowReportCommand: string;
+  workflowBacklogCreateCommand: string;
+  workflowBacklogPolishCommand: string;
 }
 
 function findPackageRoot(startDir: string): string {
@@ -105,6 +137,39 @@ function loadWorkspacePackageData(workspace: string): WorkspacePackageData {
   };
 }
 
+function resolveRepositoryName(workspace: string, manifest: Record<string, unknown>): string {
+  return typeof manifest.name === 'string' && manifest.name.trim()
+    ? manifest.name.trim()
+    : basename(workspace);
+}
+
+function readConfigTemplateDefaults(configPath: string): {
+  defaultAgent?: string;
+  defaultBranch?: string;
+} {
+  if (!existsSync(configPath)) {
+    return {};
+  }
+  try {
+    const rawConfig = JSON.parse(readFileSync(configPath, 'utf8')) as unknown;
+    if (!isRecord(rawConfig)) {
+      return {};
+    }
+    return {
+      defaultAgent:
+        typeof rawConfig.defaultAgent === 'string' && rawConfig.defaultAgent.trim()
+          ? rawConfig.defaultAgent.trim()
+          : undefined,
+      defaultBranch:
+        typeof rawConfig.defaultBranch === 'string' && rawConfig.defaultBranch.trim()
+          ? rawConfig.defaultBranch.trim()
+          : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 function renderValidationCommands(
   scripts: Record<string, unknown>,
   runner = detectPackageManagerCommand(),
@@ -114,6 +179,126 @@ function renderValidationCommands(
     getPackageScriptCommand(scripts, ['test'], runner) ?? '',
     getPackageScriptCommand(scripts, ['lint', 'typecheck', 'check', 'validate'], runner) ?? '',
   ]).filter(Boolean);
+}
+
+function buildTemplateContext(args: {
+  workspace: string;
+  installMode: InstallMode;
+  packageData: WorkspacePackageData;
+  agentKey: string;
+  defaultBranch: string;
+  runner?: string;
+}): InstallTemplateContext {
+  const { workspace, installMode, packageData, agentKey, defaultBranch } = args;
+  const runner = args.runner ?? detectPackageManagerCommand();
+  const manifest = packageData.manifest;
+  const scripts = isRecord(manifest.scripts) ? { ...manifest.scripts } : {};
+  const packageJsonExists = Boolean(packageData.path);
+  const repositoryName = resolveRepositoryName(workspace, manifest);
+
+  const buildCommand = getPackageScriptCommand(scripts, ['build'], runner);
+  const unitTestCommand = getPackageScriptCommand(scripts, ['test'], runner);
+  const lintCommand = getPackageScriptCommand(
+    scripts,
+    ['lint', 'typecheck', 'check', 'validate'],
+    runner,
+  );
+  const validationCommands = renderValidationCommands(scripts, runner);
+
+  return {
+    agentKey,
+    repositoryName,
+    defaultBranch,
+    buildCommand,
+    unitTestCommand,
+    integrationTestCommand: undefined,
+    lintCommand,
+    validationCommands,
+    workflowStatusCommand: formatDownstreamWorkflowCommand(
+      'status',
+      installMode,
+      runner,
+      '',
+      packageJsonExists,
+    ),
+    workflowInitCommand: formatDownstreamWorkflowCommand(
+      'init',
+      installMode,
+      runner,
+      '',
+      packageJsonExists,
+    ),
+    workflowDoctorCommand: formatDownstreamWorkflowCommand(
+      'doctor',
+      installMode,
+      runner,
+      '',
+      packageJsonExists,
+    ),
+    workflowNextCommand: formatDownstreamWorkflowCommand(
+      'next',
+      installMode,
+      runner,
+      ' -- --agent <agent-key>',
+      packageJsonExists,
+    ),
+    workflowStartCommand: formatDownstreamWorkflowCommand(
+      'start',
+      installMode,
+      runner,
+      ' -- --id <id> --agent <agent-key>',
+      packageJsonExists,
+    ),
+    workflowCommitCommand: formatDownstreamWorkflowCommand(
+      'commit',
+      installMode,
+      runner,
+      ' -- --id <id> --all --message "<subject>"',
+      packageJsonExists,
+    ),
+    workflowPrCommand: formatDownstreamWorkflowCommand(
+      'pr',
+      installMode,
+      runner,
+      ' -- --id <id> --ready',
+      packageJsonExists,
+    ),
+    workflowDoneCommand: formatDownstreamWorkflowCommand(
+      'done',
+      installMode,
+      runner,
+      ' -- --id <id> --summary "<outcome>" --impact "<value>"',
+      packageJsonExists,
+    ),
+    workflowAuditCommand: formatDownstreamWorkflowCommand(
+      'audit',
+      installMode,
+      runner,
+      ' -- --state open --limit 100',
+      packageJsonExists,
+    ),
+    workflowReportCommand: formatDownstreamWorkflowCommand(
+      'report',
+      installMode,
+      runner,
+      '',
+      packageJsonExists,
+    ),
+    workflowBacklogCreateCommand: formatDownstreamWorkflowCommand(
+      'backlog-create',
+      installMode,
+      runner,
+      '',
+      packageJsonExists,
+    ),
+    workflowBacklogPolishCommand: formatDownstreamWorkflowCommand(
+      'backlog-polish',
+      installMode,
+      runner,
+      '',
+      packageJsonExists,
+    ),
+  };
 }
 
 function applyInstallTemplate(
@@ -290,11 +475,17 @@ function renderInstallManifest(summary: {
   installMode: InstallMode;
   manageRootAgents: boolean;
   rootInstructionsPath: string;
+  agentKey: string;
+  defaultBranch: string;
 }): string {
   return JSON.stringify(
     {
       manifestVersion: 1,
       mode: summary.installMode,
+      defaults: {
+        agentKey: summary.agentKey,
+        defaultBranch: summary.defaultBranch,
+      },
       rootInstructions: {
         mode: summary.manageRootAgents ? 'managed' : 'external',
         path: summary.rootInstructionsPath,
@@ -348,11 +539,22 @@ function readInstallManifest(path: string): InstallManifest | undefined {
     const rootInstructions = isRecord(rawManifest.rootInstructions)
       ? rawManifest.rootInstructions
       : {};
+    const defaults = isRecord(rawManifest.defaults) ? rawManifest.defaults : {};
     const files = isRecord(rawManifest.files) ? rawManifest.files : {};
     return {
       manifestVersion:
         typeof rawManifest.manifestVersion === 'number' ? rawManifest.manifestVersion : 1,
       mode: rawManifest.mode === 'with-scripts' ? 'with-scripts' : 'minimal',
+      defaults: {
+        agentKey:
+          typeof defaults.agentKey === 'string' && defaults.agentKey.trim()
+            ? defaults.agentKey.trim()
+            : 'codex',
+        defaultBranch:
+          typeof defaults.defaultBranch === 'string' && defaults.defaultBranch.trim()
+            ? defaults.defaultBranch.trim()
+            : 'main',
+      },
       rootInstructions: {
         mode: rootInstructions.mode === 'external' ? 'external' : 'managed',
         path:
@@ -496,6 +698,35 @@ function inferInstallModeFromScripts(scripts: Record<string, unknown>): InstallM
   return matchesRecommended ? 'with-scripts' : 'minimal';
 }
 
+function recordUpgradeFile(
+  summary: UpgradeSummary,
+  status: TemplateWriteStatus,
+  path: string,
+  ownership: 'managed' | 'user',
+): void {
+  if (ownership === 'user' && status === 'unchanged') {
+    summary.files.preserved.push(path);
+    return;
+  }
+  summary.files[
+    status === 'created' ? 'created' : status === 'updated' ? 'updated' : 'unchanged'
+  ].push(path);
+}
+
+function resolveUpgradeDefaults(
+  workspace: string,
+  manifest: InstallManifest,
+): {
+  agentKey: string;
+  defaultBranch: string;
+} {
+  const configDefaults = readConfigTemplateDefaults(join(workspace, manifest.files.config));
+  return {
+    agentKey: configDefaults.defaultAgent ?? manifest.defaults.agentKey ?? 'codex',
+    defaultBranch: configDefaults.defaultBranch ?? manifest.defaults.defaultBranch ?? 'main',
+  };
+}
+
 export function commandInstall(args: string[]): void {
   const workspace = process.cwd();
   const dryRun = hasFlag(args, '--dry-run');
@@ -517,116 +748,16 @@ export function commandInstall(args: string[]): void {
   const scripts = isRecord(manifest.scripts) ? { ...manifest.scripts } : {};
   const force = hasFlag(args, '--force');
   const runner = detectPackageManagerCommand();
-  const repositoryName =
-    typeof manifest.name === 'string' && manifest.name.trim()
-      ? manifest.name.trim()
-      : basename(workspace);
   const agentKey = parseArgValue(args, '--agent-key')?.trim() || 'codex';
   const defaultBranch = parseArgValue(args, '--default-branch')?.trim() || 'main';
-
-  const buildCommand = getPackageScriptCommand(scripts, ['build'], runner);
-  const unitTestCommand = getPackageScriptCommand(scripts, ['test'], runner);
-  const lintCommand = getPackageScriptCommand(
-    scripts,
-    ['lint', 'typecheck', 'check', 'validate'],
-    runner,
-  );
-  const validationCommands = renderValidationCommands(scripts, runner);
-
-  const templateContext = {
+  const templateContext = buildTemplateContext({
+    workspace,
+    installMode,
+    packageData,
     agentKey,
-    repositoryName,
     defaultBranch,
-    buildCommand,
-    unitTestCommand,
-    integrationTestCommand: undefined,
-    lintCommand,
-    validationCommands,
-    workflowStatusCommand: formatDownstreamWorkflowCommand(
-      'status',
-      installMode,
-      runner,
-      '',
-      packageJsonExists,
-    ),
-    workflowInitCommand: formatDownstreamWorkflowCommand(
-      'init',
-      installMode,
-      runner,
-      '',
-      packageJsonExists,
-    ),
-    workflowDoctorCommand: formatDownstreamWorkflowCommand(
-      'doctor',
-      installMode,
-      runner,
-      '',
-      packageJsonExists,
-    ),
-    workflowNextCommand: formatDownstreamWorkflowCommand(
-      'next',
-      installMode,
-      runner,
-      ' -- --agent <agent-key>',
-      packageJsonExists,
-    ),
-    workflowStartCommand: formatDownstreamWorkflowCommand(
-      'start',
-      installMode,
-      runner,
-      ' -- --id <id> --agent <agent-key>',
-      packageJsonExists,
-    ),
-    workflowCommitCommand: formatDownstreamWorkflowCommand(
-      'commit',
-      installMode,
-      runner,
-      ' -- --id <id> --all --message "<subject>"',
-      packageJsonExists,
-    ),
-    workflowPrCommand: formatDownstreamWorkflowCommand(
-      'pr',
-      installMode,
-      runner,
-      ' -- --id <id> --ready',
-      packageJsonExists,
-    ),
-    workflowDoneCommand: formatDownstreamWorkflowCommand(
-      'done',
-      installMode,
-      runner,
-      ' -- --id <id> --summary "<outcome>" --impact "<value>"',
-      packageJsonExists,
-    ),
-    workflowAuditCommand: formatDownstreamWorkflowCommand(
-      'audit',
-      installMode,
-      runner,
-      ' -- --state open --limit 100',
-      packageJsonExists,
-    ),
-    workflowReportCommand: formatDownstreamWorkflowCommand(
-      'report',
-      installMode,
-      runner,
-      '',
-      packageJsonExists,
-    ),
-    workflowBacklogCreateCommand: formatDownstreamWorkflowCommand(
-      'backlog-create',
-      installMode,
-      runner,
-      '',
-      packageJsonExists,
-    ),
-    workflowBacklogPolishCommand: formatDownstreamWorkflowCommand(
-      'backlog-polish',
-      installMode,
-      runner,
-      '',
-      packageJsonExists,
-    ),
-  };
+    runner,
+  });
 
   const addedScripts: string[] = [];
   const updatedScripts: string[] = [];
@@ -774,6 +905,8 @@ export function commandInstall(args: string[]): void {
       installMode,
       manageRootAgents,
       rootInstructionsPath: entrypoint.relativePath,
+      agentKey,
+      defaultBranch,
     }),
     force,
     dryRun,
@@ -805,6 +938,212 @@ export function commandInstall(args: string[]): void {
   }
   if (summary.files.unchanged.length > 0) {
     console.log(`files unchanged: ${summary.files.unchanged.join(', ')}`);
+  }
+  for (const nextStep of summary.nextSteps) {
+    console.log(`next: ${nextStep}`);
+  }
+}
+
+export function commandUpgrade(args: string[]): void {
+  const workspace = process.cwd();
+  const dryRun = hasFlag(args, '--dry-run');
+  if (resolve(workspace) === resolve(PACKAGE_ROOT)) {
+    fail(
+      'upgrade targets downstream repos. Run it from the repo that adopted AEL, not inside the AEL package repo.',
+    );
+  }
+
+  const manifestPath = join(workspace, DEFAULT_INSTALL_MANIFEST_FILENAME);
+  const installManifest = readInstallManifest(manifestPath);
+  if (!installManifest) {
+    fail(`upgrade requires ${manifestPath}. Run ael install first.`);
+  }
+
+  const packageData = loadWorkspacePackageData(workspace);
+  const packageJsonExists = Boolean(packageData.path);
+  if (installManifest.mode === 'with-scripts' && !packageJsonExists) {
+    fail(
+      `upgrade expected a package.json in ${workspace} because this repo was installed with --with-scripts.`,
+    );
+  }
+
+  const defaults = resolveUpgradeDefaults(workspace, installManifest);
+  const runner = detectPackageManagerCommand();
+  const entrypoint = resolveEntrypointPath(workspace, installManifest.rootInstructions.path);
+  const templateContext = buildTemplateContext({
+    workspace,
+    installMode: installManifest.mode,
+    packageData,
+    agentKey: defaults.agentKey,
+    defaultBranch: defaults.defaultBranch,
+    runner,
+  });
+
+  const summary: UpgradeSummary = {
+    ok: true,
+    dryRun,
+    mode: installManifest.mode,
+    rootInstructions: installManifest.rootInstructions.mode,
+    rootInstructionsPath: entrypoint.relativePath,
+    workspace,
+    packageJsonPath: packageData.path,
+    defaults,
+    scripts: {
+      added: [],
+      updated: [],
+      unchanged: [],
+    },
+    files: {
+      created: [],
+      updated: [],
+      unchanged: [],
+      preserved: [],
+    },
+    warnings: [],
+    nextSteps: [
+      dryRun ? 'review the previewed managed-file changes' : 'review the repo diff',
+      formatDownstreamWorkflowCommand(
+        'doctor',
+        installManifest.mode,
+        runner,
+        ' -- --adoption',
+        packageJsonExists,
+      ),
+    ],
+  };
+
+  if (installManifest.mode === 'with-scripts' && packageData.path) {
+    const manifest = packageData.manifest;
+    const scripts = isRecord(manifest.scripts) ? { ...manifest.scripts } : {};
+    const recommendedScripts = loadRecommendedPackageScripts();
+    for (const [name, command] of Object.entries(recommendedScripts)) {
+      const current = scripts[name];
+      if (current === undefined) {
+        scripts[name] = command;
+        summary.scripts.added.push(name);
+        continue;
+      }
+      if (current === command) {
+        summary.scripts.unchanged.push(name);
+        continue;
+      }
+      scripts[name] = command;
+      summary.scripts.updated.push(name);
+    }
+    manifest.scripts = scripts;
+    if (!dryRun) {
+      writeFileSync(packageData.path, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    }
+    if (summary.scripts.added.length > 0 || summary.scripts.updated.length > 0) {
+      summary.files.updated.push(packageData.path);
+    } else {
+      summary.files.unchanged.push(packageData.path);
+    }
+  } else if (packageData.path) {
+    summary.files.unchanged.push(packageData.path);
+  }
+
+  if (installManifest.rootInstructions.mode === 'managed') {
+    const agentsTemplate = applyInstallTemplate(
+      loadDownstreamTemplate('AGENTS.md'),
+      templateContext,
+    );
+    const agentsResult = updateAgentsFile(entrypoint.absolutePath, agentsTemplate, true, dryRun);
+    recordUpgradeFile(summary, agentsResult.status, agentsResult.path, 'managed');
+  } else {
+    summary.files.unchanged.push(entrypoint.absolutePath);
+    summary.warnings.push(
+      `root instructions are externally managed; AEL did not modify ${entrypoint.absolutePath}.`,
+    );
+  }
+
+  const agentGuidePath = join(workspace, installManifest.files.agentGuide);
+  const agentGuideTemplate = applyInstallTemplate(
+    loadDownstreamTemplate('agent-guide.md'),
+    templateContext,
+  );
+  const agentGuideResult = writeTemplateFile(agentGuidePath, agentGuideTemplate, true, dryRun);
+  recordUpgradeFile(summary, agentGuideResult.status, agentGuideResult.path, 'managed');
+
+  const projectContractPath = join(workspace, installManifest.files.projectContract);
+  const projectContractTemplate = applyInstallTemplate(
+    loadDownstreamTemplate('AEL-PROJECT-CONTRACT.md'),
+    templateContext,
+  );
+  const projectContractResult = writeTemplateFile(
+    projectContractPath,
+    projectContractTemplate,
+    false,
+    dryRun,
+  );
+  recordUpgradeFile(summary, projectContractResult.status, projectContractResult.path, 'user');
+
+  const aelGitignorePath = join(workspace, installManifest.files.gitignore);
+  const aelGitignoreResult = writeTemplateFile(
+    aelGitignorePath,
+    loadDownstreamTemplate('ael.gitignore'),
+    true,
+    dryRun,
+  );
+  recordUpgradeFile(summary, aelGitignoreResult.status, aelGitignoreResult.path, 'managed');
+
+  const settingsPath = join(workspace, installManifest.files.settings);
+  const settingsResult = writeTemplateFile(
+    settingsPath,
+    loadDownstreamTemplate('settings.json'),
+    false,
+    dryRun,
+  );
+  recordUpgradeFile(summary, settingsResult.status, settingsResult.path, 'user');
+
+  const installManifestPath = join(workspace, DEFAULT_INSTALL_MANIFEST_FILENAME);
+  const installManifestResult = writeTemplateFile(
+    installManifestPath,
+    renderInstallManifest({
+      installMode: installManifest.mode,
+      manageRootAgents: installManifest.rootInstructions.mode === 'managed',
+      rootInstructionsPath: entrypoint.relativePath,
+      agentKey: defaults.agentKey,
+      defaultBranch: defaults.defaultBranch,
+    }),
+    true,
+    dryRun,
+  );
+  recordUpgradeFile(summary, installManifestResult.status, installManifestResult.path, 'managed');
+
+  if (wantsJson(args)) {
+    printJson(summary);
+    return;
+  }
+
+  console.log(`=== AEL UPGRADE${dryRun ? ' DRY RUN' : ''} ===`);
+  console.log(`workspace: ${workspace}`);
+  console.log(`mode: ${installManifest.mode}`);
+  console.log(`default agent: ${defaults.agentKey}`);
+  console.log(`default branch: ${defaults.defaultBranch}`);
+  if (packageData.path) {
+    console.log(`package.json: ${packageData.path}`);
+  }
+  if (summary.scripts.added.length > 0) {
+    console.log(`scripts added: ${summary.scripts.added.join(', ')}`);
+  }
+  if (summary.scripts.updated.length > 0) {
+    console.log(`scripts updated: ${summary.scripts.updated.join(', ')}`);
+  }
+  if (summary.files.created.length > 0) {
+    console.log(`files created: ${summary.files.created.join(', ')}`);
+  }
+  if (summary.files.updated.length > 0) {
+    console.log(`files updated: ${summary.files.updated.join(', ')}`);
+  }
+  if (summary.files.preserved.length > 0) {
+    console.log(`files preserved: ${summary.files.preserved.join(', ')}`);
+  }
+  if (summary.files.unchanged.length > 0) {
+    console.log(`files unchanged: ${summary.files.unchanged.join(', ')}`);
+  }
+  for (const warning of summary.warnings) {
+    console.log(`warning: ${warning}`);
   }
   for (const nextStep of summary.nextSteps) {
     console.log(`next: ${nextStep}`);

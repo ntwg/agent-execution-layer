@@ -251,6 +251,7 @@ function printAuditFindings(findings: AuditFinding[]): void {
 export function commandRetag(config: AgentExecutionConfig, args: string[]): void {
   ensureModeEnabled(config, args, 'retag');
   const dryRun = hasFlag(args, '--dry-run');
+  const manualTags = parseTagList(parseArgValue(args, '--tags'));
   const targetIds = (() => {
     const idRaw = parseArgValue(args, '--id');
     const idsRaw = parseArgValue(args, '--ids');
@@ -295,7 +296,7 @@ export function commandRetag(config: AgentExecutionConfig, args: string[]): void
   }> = [];
   for (const id of targetIds) {
     const existing = getWorkItemTags(config, id);
-    const normalizedTarget = normalizeTags([...existing, ...config.sharedTags]);
+    const normalizedTarget = normalizeTags([...existing, ...config.sharedTags, ...manualTags]);
     const before = uniqueTags(existing).join(';');
     const after = normalizedTarget.join(';');
 

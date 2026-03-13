@@ -115,11 +115,14 @@ test('install writes downstream repo contract files without mutating package.jso
   ) as {
     manifestVersion: number;
     mode: string;
+    defaults: { agentKey: string; defaultBranch: string };
     rootInstructions: { mode: string; path: string };
     files: { settings: string };
   };
   assert.equal(installManifest.manifestVersion, 1);
   assert.equal(installManifest.mode, 'minimal');
+  assert.equal(installManifest.defaults.agentKey, 'cursor');
+  assert.equal(installManifest.defaults.defaultBranch, 'main');
   assert.equal(installManifest.rootInstructions.mode, 'managed');
   assert.equal(installManifest.rootInstructions.path, 'AGENTS.md');
   assert.equal(installManifest.files.settings, '.ael/settings.json');
@@ -174,6 +177,7 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   assert.equal(summary.rootInstructions, 'managed');
   assert.equal(summary.rootInstructionsPath, 'AGENTS.md');
   assert.ok(summary.scripts.added.includes('ael:install'));
+  assert.ok(summary.scripts.added.includes('ael:upgrade'));
   assert.ok(summary.scripts.added.includes('ael:uninstall'));
   assert.ok(summary.scripts.added.includes('ael:backlog-create'));
   assert.ok(summary.scripts.added.includes('ael:backlog-polish'));
@@ -188,6 +192,7 @@ test('install --with-scripts writes downstream package scripts and keeps script-
     scripts: Record<string, string>;
   };
   assert.equal(packageJson.scripts['ael:install'], 'ael install --with-scripts');
+  assert.equal(packageJson.scripts['ael:upgrade'], 'ael upgrade');
   assert.equal(packageJson.scripts['ael:uninstall'], 'ael uninstall');
   assert.equal(packageJson.scripts['ael:backlog-create'], 'ael backlog-create');
   assert.equal(packageJson.scripts['ael:backlog-polish'], 'ael backlog-polish');
@@ -419,6 +424,112 @@ test('install --no-root-agents can record a custom external entrypoint path', (t
   assert.equal(readFileSync(join(workspace, 'docs-note.md'), 'utf8'), '# team note\n');
 });
 
+test('upgrade refreshes managed files while preserving user-owned templates', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  writeFileSync(
+    join(workspace, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'upgrade-repo',
+        private: true,
+        scripts: {
+          build: 'tsc -p .',
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  runCli(['install', '--with-scripts', '--agent-key', 'cursor', '--json'], workspace);
+
+  writeFileSync(join(workspace, '.ael', 'agent-guide.md'), '# stale guide\n', 'utf8');
+  writeFileSync(join(workspace, '.ael', 'project-contract.md'), '# team-owned contract\n', 'utf8');
+  writeFileSync(
+    join(workspace, '.ael', 'settings.json'),
+    `${JSON.stringify({ promptTemplates: { backlogCreate: 'custom create' } }, null, 2)}\n`,
+    'utf8',
+  );
+  writeFileSync(
+    join(workspace, '.ael', 'config.local.json'),
+    `${JSON.stringify(
+      {
+        configVersion: 3,
+        defaultBranch: 'release',
+        defaultAgent: 'claude',
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const packageJsonBeforeUpgrade = JSON.parse(
+    readFileSync(join(workspace, 'package.json'), 'utf8'),
+  ) as {
+    scripts: Record<string, string>;
+  };
+  const { 'ael:upgrade': _removedUpgradeScript, ...remainingScripts } =
+    packageJsonBeforeUpgrade.scripts;
+  packageJsonBeforeUpgrade.scripts = remainingScripts;
+  packageJsonBeforeUpgrade.scripts['ael:status'] = 'echo stale-status';
+  writeFileSync(
+    join(workspace, 'package.json'),
+    `${JSON.stringify(packageJsonBeforeUpgrade, null, 2)}\n`,
+    'utf8',
+  );
+
+  const summary = JSON.parse(runCli(['upgrade', '--json'], workspace)) as {
+    ok: boolean;
+    mode: string;
+    rootInstructions: string;
+    defaults: { agentKey: string; defaultBranch: string };
+    scripts: { added: string[]; updated: string[] };
+    files: { updated: string[]; preserved: string[] };
+  };
+
+  assert.equal(summary.ok, true);
+  assert.equal(summary.mode, 'with-scripts');
+  assert.equal(summary.rootInstructions, 'managed');
+  assert.equal(summary.defaults.agentKey, 'claude');
+  assert.equal(summary.defaults.defaultBranch, 'release');
+  assert.ok(summary.scripts.added.includes('ael:upgrade'));
+  assert.ok(summary.scripts.updated.includes('ael:status'));
+  assert.ok(pathListIncludesSuffix(summary.files.updated, 'package.json'));
+  assert.ok(pathListIncludesSuffix(summary.files.updated, '.ael/agent-guide.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.updated, '.ael/install.json'));
+  assert.ok(pathListIncludesSuffix(summary.files.preserved, '.ael/project-contract.md'));
+  assert.ok(pathListIncludesSuffix(summary.files.preserved, '.ael/settings.json'));
+
+  const packageJson = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>;
+  };
+  assert.equal(packageJson.scripts['ael:upgrade'], 'ael upgrade');
+  assert.equal(packageJson.scripts['ael:status'], 'ael status --json');
+
+  const guide = readFileSync(join(workspace, '.ael', 'agent-guide.md'), 'utf8');
+  assert.match(guide, /`claude`/);
+
+  const contract = readFileSync(join(workspace, '.ael', 'project-contract.md'), 'utf8');
+  assert.equal(contract, '# team-owned contract\n');
+
+  const settings = JSON.parse(readFileSync(join(workspace, '.ael', 'settings.json'), 'utf8')) as {
+    promptTemplates: { backlogCreate: string };
+  };
+  assert.equal(settings.promptTemplates.backlogCreate, 'custom create');
+
+  const installManifest = JSON.parse(
+    readFileSync(join(workspace, '.ael', 'install.json'), 'utf8'),
+  ) as {
+    defaults: { agentKey: string; defaultBranch: string };
+  };
+  assert.equal(installManifest.defaults.agentKey, 'claude');
+  assert.equal(installManifest.defaults.defaultBranch, 'release');
+});
+
 test('uninstall removes managed files and exact-match scripts from a downstream repo', (t) => {
   const workspace = makeTempDir();
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
@@ -464,6 +575,7 @@ test('uninstall removes managed files and exact-match scripts from a downstream 
   assert.ok(pathListIncludesSuffix(summary.files.removed, '.ael/settings.json'));
   assert.ok(pathListIncludesSuffix(summary.files.updated, 'package.json'));
   assert.ok(summary.scripts.removed.includes('ael:install'));
+  assert.ok(summary.scripts.removed.includes('ael:upgrade'));
   assert.ok(summary.scripts.removed.includes('ael:uninstall'));
   assert.ok(summary.scripts.removed.includes('ael:backlog-create'));
   assert.ok(summary.scripts.removed.includes('ael:backlog-polish'));
@@ -519,6 +631,7 @@ test('uninstall --dry-run previews downstream cleanup without removing files', (
   assert.ok(pathListIncludesSuffix(summary.files.removed, 'AGENTS.md'));
   assert.ok(pathListIncludesSuffix(summary.files.updated, 'package.json'));
   assert.ok(summary.scripts.removed.includes('ael:install'));
+  assert.ok(summary.scripts.removed.includes('ael:upgrade'));
   assert.equal(existsSync(join(workspace, 'AGENTS.md')), true);
   assert.equal(existsSync(join(workspace, '.ael', 'agent-guide.md')), true);
 
@@ -526,4 +639,5 @@ test('uninstall --dry-run previews downstream cleanup without removing files', (
     scripts?: Record<string, string>;
   };
   assert.equal(packageJson.scripts?.['ael:install'], 'ael install --with-scripts');
+  assert.equal(packageJson.scripts?.['ael:upgrade'], 'ael upgrade');
 });
