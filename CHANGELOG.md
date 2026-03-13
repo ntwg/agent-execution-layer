@@ -16,6 +16,7 @@ This project keeps a lightweight changelog.
 - Expanded CI coverage to run format, lint, build, and test validation across Ubuntu, macOS, and Windows so cross-platform support is continuously verified.
 - Added `.gitattributes` line-ending normalization so cross-platform format checks stay stable when the repo is checked out on Windows.
 - Replaced the shell-globbed test command with a Node-based test runner so `npm test` behaves the same under Windows `cmd.exe`, macOS, and Linux shells.
+- Fixed Windows `cmd.exe` percent escaping for git format strings so commands like `cleanup-branches` can safely call `git for-each-ref --format=%(...)` without mangling arguments.
 - Added repo-root config discovery so nested-folder command runs can still find `.ael/config.local.json` reliably inside the active git repo.
 - Added explicit human-block workflow commands (`block`, `unblock`) plus config-driven human-block tags so approvals and external setup needs are visible to other agents.
 - Added config-driven coordination, cleanup, branching, and hierarchy settings for area tags, stale cleanup thresholds, rollout branches, branch aliases, and hierarchy-aware work item kinds.

@@ -15,7 +15,7 @@ export interface CommandRuntimeProfile {
 const WINDOWS_SHELL_COMMANDS = new Set(['az', 'git', 'curl']);
 
 function escapeWindowsShellArg(arg: string): string {
-  return arg.replaceAll(/[()%!^&|]/g, (match) => `^${match}`);
+  return arg.replaceAll(/[()%!^&|]/g, (match) => (match === '%' ? '%%' : `^${match}`));
 }
 
 function wrapPassthroughCommand(args: string[]): CommandInvocation {

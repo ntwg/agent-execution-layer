@@ -41,6 +41,27 @@ test('resolveCommandInvocation routes Windows git commands through cmd.exe', () 
   });
 });
 
+test('resolveCommandInvocation preserves git format placeholders on Windows', () => {
+  assert.deepEqual(
+    resolveCommandInvocation(
+      ['git', 'for-each-ref', 'refs/heads', '--format=%(refname:short)|%(committerdate:unix)'],
+      'win32',
+    ),
+    {
+      command: 'cmd.exe',
+      args: [
+        '/d',
+        '/s',
+        '/c',
+        'git',
+        'for-each-ref',
+        'refs/heads',
+        '--format=%%^(refname:short^)^|%%^(committerdate:unix^)',
+      ],
+    },
+  );
+});
+
 test('resolveCommandInvocation routes Windows curl commands through cmd.exe', () => {
   assert.deepEqual(
     resolveCommandInvocation(['curl', '-sS', 'https://example.com?a=1&b=2'], 'win32'),
