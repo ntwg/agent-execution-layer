@@ -10,7 +10,17 @@ This project keeps a lightweight changelog.
 
 ## Unreleased
 
-- Added `ael refresh` so downstream repos can update the installed AEL dependency and then run the managed-file refresh in one command, with package-manager-aware behavior across macOS, Linux, and Windows.
+- No unreleased changes yet.
+
+## 0.5.0 - 2026-03-18
+
+- Added Codex-app-native orchestration commands: `orchestrate`, `orchestrate-status`, `orchestrate-sync`, `orchestrate-finalize`, `orchestrate-stop`, and `subagent-checkin`.
+- Added durable local orchestration state under `.ael/orchestration/` so orchestrator threads can persist run manifests, child briefs, and event logs without polluting tracked repo files.
+- Added grouped-or-isolated orchestration planning, Azure DevOps child task creation, orchestration tags, approval checkpoints, and child check-in tracking.
+- Added grouped `pr` and `done` flows so one PR can cover a coordinated set of linked work items while still enforcing complete ADO linkage.
+- Added orchestration prompts, defaults, tag prefixes, approval rules, and check-in policy to `.ael/settings.json`, and shipped those defaults through downstream install/upgrade templates.
+- Added `doctor --orchestration` and orchestration sections in `report` so downstream repos can validate and observe orchestration health directly.
+- Expanded tests to cover grouped PR finalization, orchestration local state creation, child check-ins, and grouped run finalization behavior.
 
 ## 0.4.0 - 2026-03-13
 

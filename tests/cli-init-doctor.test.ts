@@ -510,6 +510,9 @@ test('doctor --adoption passes for a downstream repo installed with defaults', (
   assert.equal(doctorJson.mode, 'adoption');
   assert.ok(doctorJson.checks.some((check) => check.label === 'ael install manifest' && check.ok));
   assert.ok(doctorJson.checks.some((check) => check.label === 'ael settings' && check.ok));
+  assert.ok(
+    doctorJson.checks.some((check) => check.label === 'ael orchestration settings' && check.ok),
+  );
   assert.ok(doctorJson.checks.some((check) => check.label === 'ael root entrypoint' && check.ok));
   assert.ok(doctorJson.checks.some((check) => check.label === 'ael local ignore' && check.ok));
 });

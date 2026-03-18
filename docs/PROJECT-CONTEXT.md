@@ -26,6 +26,7 @@ The engine currently covers:
 - Azure DevOps audit and safe repair commands
 - Azure DevOps human-readable status reporting
 - stale branch and stale PR cleanup commands
+- Codex-app-native orchestration with durable ADO child work items, local run state, and grouped or isolated PR finalization
 
 Current entrypoint:
 
@@ -40,6 +41,7 @@ Core internal modules:
 - `scripts/lib/ado-cli-reporting.ts`
 - `scripts/lib/ado-cli-install.ts`
 - `scripts/lib/ado-cli-types.ts`
+- `scripts/lib/orchestration/*`
 
 ## Product Direction
 
@@ -49,7 +51,7 @@ Core internal modules:
 
 ## Current State
 
-As of March 13, 2026:
+As of March 18, 2026:
 
 - the repo builds successfully
 - the automated test suite now covers config compatibility, PR description rendering, and stubbed `init`/`doctor` flows
@@ -81,6 +83,12 @@ As of March 13, 2026:
 - branch and PR cleanup now exist as first-class commands with safe-by-default dry-run behavior
 - `create` now supports config-backed hierarchy kinds like `initiative`, `feature`, `backlog`, and `task`
 - downstream install/upgrade/uninstall now expose managed vs user-owned vs local-only file ownership with `--explain`
+- AEL now includes an orchestration subsystem for Codex app orchestrator threads, including `orchestrate`, `orchestrate-status`, `orchestrate-sync`, `orchestrate-finalize`, `orchestrate-stop`, and `subagent-checkin`
+- orchestration runs persist under `.ael/orchestration/` as local-only state while child work remains visible in Azure DevOps child tasks
+- grouped PR and done flows can now operate across multiple related work items through `--ids`
+- downstream `.ael/settings.json` now carries orchestration prompts, defaults, tag prefixes, approval rules, and check-in policy
+- `doctor --orchestration` validates orchestration readiness in addition to the existing adoption/bootstrap checks
+- `report` now surfaces orchestration run counts, blocked children, and items awaiting orchestrator review
 
 Validated commands:
 
@@ -94,6 +102,11 @@ npm run ael:smoke
 npm run ael:validate-config
 npm run ael:backlog-create
 npm run ael:backlog-polish
+npm run ael:orchestrate -- --ids "<id;id;id>"
+npm run ael:orchestrate-status -- --run <run-id>
+npm run ael:orchestrate-sync -- --run <run-id>
+npm run ael:orchestrate-finalize -- --run <run-id>
+npm run ael:subagent-checkin -- --run <run-id> --child <child-id> --status done --summary "<summary>"
 npm run ael:status
 npm run ael:help
 npm run ael:block -- --id <id> --reason human-approval-needed
@@ -115,20 +128,21 @@ This repo is separated and now validated against a real Azure DevOps repo, but i
 
 Main remaining hardening gaps:
 
-1. decide when to remove `private` from `package.json` and publish formally
-2. keep public troubleshooting/adoption docs tight as real users exercise the install flow
-3. long-term optional GitHub code-host support is not started
-4. keep cross-platform coverage and cleanup flows stable as real downstream repos exercise them
+1. validate orchestration end to end in more downstream repos and keep the grouped-vs-isolated heuristics stable
+2. decide when to remove `private` from `package.json` and publish formally
+3. keep public troubleshooting/adoption docs tight as real users exercise the install flow
+4. long-term optional GitHub code-host support is not started
+5. keep cross-platform coverage, orchestration state handling, and cleanup flows stable as real downstream repos exercise them
 
 ## Near-Term Priority
 
 If continuing work in this repo, the highest-value next steps are:
 
 1. decide final publish posture and package visibility
-2. keep the `.ael/` downstream layout stable so zero-context agents have one consistent discovery path
-3. keep cleanup, human-block, overlap-reporting, and rollout-branch behavior stable across Windows and macOS at the same time
+2. keep the `.ael/` downstream layout and orchestration prompt protocol stable so zero-context agents have one consistent discovery path
+3. keep cleanup, human-block, orchestration, overlap-reporting, and rollout-branch behavior stable across Windows and macOS at the same time
 4. decide whether later GitHub support is repo-host-only or full tracker parity
-5. keep troubleshooting and example coverage aligned with the real install modes
+5. keep troubleshooting and example coverage aligned with the real install and orchestration modes
 
 Do not spend time adding project-specific behavior here.
 
@@ -170,6 +184,7 @@ Template:
 - `docs/ADOPTING-AEL.md`
 - `templates/downstream/*`
 - `.ael/settings.json`
+- `.ael/orchestration/*`
 - `docs/RELEASE-POLICY.md`
 - `CHANGELOG.md`
 

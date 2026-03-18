@@ -13,6 +13,14 @@ import {
   commandUninstall,
   commandUpgrade,
 } from './lib/ado-cli-install.js';
+import {
+  commandOrchestrate,
+  commandOrchestrateFinalize,
+  commandOrchestrateStatus,
+  commandOrchestrateStop,
+  commandOrchestrateSync,
+  commandSubagentCheckin,
+} from './lib/orchestration/commands.js';
 import { commandCleanupBranches, commandCleanupPullRequests } from './lib/ado-cli-cleanup.js';
 import {
   commandAudit,
@@ -57,6 +65,24 @@ async function main(): Promise<void> {
     case 'backlog-polish':
     case 'polish-backlog':
       commandBacklogPolish(args);
+      return;
+    case 'orchestrate':
+      commandOrchestrate(loadConfig(), args);
+      return;
+    case 'orchestrate-status':
+      commandOrchestrateStatus(loadConfig(), args);
+      return;
+    case 'orchestrate-sync':
+      commandOrchestrateSync(loadConfig(), args);
+      return;
+    case 'orchestrate-finalize':
+      commandOrchestrateFinalize(loadConfig(), args);
+      return;
+    case 'orchestrate-stop':
+      commandOrchestrateStop(loadConfig(), args);
+      return;
+    case 'subagent-checkin':
+      commandSubagentCheckin(loadConfig(), args);
       return;
     case 'install':
       commandInstall(args);

@@ -11,7 +11,7 @@ The target state is:
 - generate repo-local config with `ael init`
 - keep AEL metadata in a hidden `.ael/` directory
 - give agents one obvious root-level entrypoint in the downstream repo's `AGENTS.md`
-- let teams customize backlog-analysis prompts through `.ael/settings.json`
+- let teams customize backlog-analysis and orchestration prompts through `.ael/settings.json`
 
 This keeps the workflow engine reusable while leaving project-specific validation and escalation rules in the downstream repo.
 
@@ -46,7 +46,7 @@ Default install mode is intentionally minimal:
 - no root `.gitignore` mutation
 - tracked `.ael/.gitignore` handles local AEL state
 - repo-local instructions and policy stay under `.ael/`
-- backlog prompt templates stay editable in `.ael/settings.json`
+- backlog and orchestration prompt templates stay editable in `.ael/settings.json`
 
 If a downstream repo wants repo-local script shortcuts, run `ael install --with-scripts`.
 If a downstream repo wants the root discovery stub somewhere other than `AGENTS.md`, run `ael install --entrypoint-file <path>`.
@@ -80,11 +80,12 @@ Minimum downstream setup:
 2. run `ael install`
 3. review the generated root `AGENTS.md` discovery stub
 4. fill out `.ael/project-contract.md` with repo-specific validation and escalation rules
-5. edit `.ael/settings.json` if you want custom backlog-create/backlog-polish prompts
+5. edit `.ael/settings.json` if you want custom backlog-create/backlog-polish prompts or repo-specific orchestration defaults
 6. run `npx ael init` or your package-manager equivalent
 7. if the machine needs it, re-run `npx ael init --platform windows|mac|linux`
 8. run `npx ael doctor` or your package-manager equivalent
-9. run `npx ael status` or your package-manager equivalent
+9. run `npx ael doctor --orchestration` if the repo plans to use Codex-app-native orchestration
+10. run `npx ael status` or your package-manager equivalent
 
 If the repo prefers `npm run ael:*` scripts, use `ael install --with-scripts` instead.
 If the repo already manages its own root `AGENTS.md`, use `ael install --no-root-agents` and point that existing file at `.ael/agent-guide.md`.
@@ -154,7 +155,7 @@ Optional standard mode:
 - `ael install --explain` and `ael upgrade --explain` print which files AEL manages directly versus which files remain repo-owned or local-only
 - `ael refresh` updates the installed AEL dependency and then refreshes the managed AEL files in one command
 - `ael upgrade` refreshes AEL-managed files after an AEL package update while preserving repo-owned `.ael/project-contract.md`, `.ael/settings.json`, and `.ael/config.local.json`
-- script mode exposes the full repo-local `ael:*` workflow shortcut set, including `ael:backlog-create`, `ael:backlog-polish`, `ael:block`, `ael:unblock`, `ael:claim`, `ael:prioritize`, `ael:link`, `ael:branch`, `ael:retag`, `ael:cleanup-branches`, and `ael:cleanup-prs`
+- script mode exposes the full repo-local `ael:*` workflow shortcut set, including `ael:backlog-create`, `ael:backlog-polish`, `ael:orchestrate`, `ael:orchestrate-status`, `ael:orchestrate-sync`, `ael:orchestrate-finalize`, `ael:orchestrate-stop`, `ael:subagent-checkin`, `ael:block`, `ael:unblock`, `ael:claim`, `ael:prioritize`, `ael:link`, `ael:branch`, `ael:retag`, `ael:cleanup-branches`, and `ael:cleanup-prs`
 
 Optional custom entrypoint mode:
 
@@ -186,6 +187,13 @@ It checks:
 - the expected root discovery entrypoint file
 - required `ael:*` scripts when install mode is `--with-scripts`
 
+Use `ael doctor --orchestration` when the downstream repo is going to use Codex app orchestration. It verifies:
+
+- orchestration prompt/settings defaults in `.ael/settings.json`
+- `.ael/.gitignore` still keeps `.ael/orchestration/` local-only
+- the orchestration command surface exists in the installed AEL version
+- the local orchestration state root can be created cleanly
+
 ## Troubleshooting
 
 Use [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for the common failure cases:
@@ -196,6 +204,7 @@ Use [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for the common failure cases
 - `ael init` not detecting the Azure DevOps target
 - Azure auth or repo-access failures during `doctor`
 - Windows or Mac command-routing issues
+- orchestration state or prompt scaffolding missing after install/refresh
 - `ael uninstall` preserving customized files or scripts
 - `ael cleanup-branches` or `ael cleanup-prs` flagging stale workflow residue after heavy agent use
 
@@ -209,6 +218,7 @@ Default recommendation for downstream repos:
 - require human escalation when `doctor` fails or repo state is inconsistent
 - use `ael block` for human-gated work so approval/setup blockers are explicit to other agents
 - do not let the agent invent validation requirements; define them in the downstream project contract
+- require the orchestrator to remain the final PR authority when Codex subagents are used
 
 ## Upstream Feedback Loop
 

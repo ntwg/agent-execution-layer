@@ -44,6 +44,11 @@ npm run ael:doctor
 npm run ael:validate-config
 npm run ael:status
 npm run ael:help
+npm run ael:orchestrate -- --ids "<id;id;id>"
+npm run ael:orchestrate-status -- --run <run-id>
+npm run ael:orchestrate-sync -- --run <run-id>
+npm run ael:orchestrate-finalize -- --run <run-id>
+npm run ael:subagent-checkin -- --run <run-id> --child <child-id> --status done --summary "<summary>"
 npm run ael:block -- --id <id> --reason human-approval-needed
 npm run ael:unblock -- --id <id>
 npm run ael:create -- --title "<task>" --human-summary "<goal>" --agent-context "<technical context>"
@@ -75,6 +80,7 @@ Adoption target:
 - downstream repos should bootstrap themselves with `ael install`
 - downstream repos should keep their repo-local workflow guidance under `.ael/`
 - downstream repos should keep only a small root discovery stub in `AGENTS.md`
+- downstream repos may use Codex-app-native orchestration, but AEL remains the durable workflow and PR authority
 
 ## Upstream Bugs And Fixes
 
@@ -106,8 +112,8 @@ When preparing an upstream PR:
 
 Until this repo is more fully productized, prioritize:
 
-1. confirming the downstream installed-package path in a clean repo
-2. keeping cleanup, human-blocked, overlap-reporting, and rollout-branch flows stable across Windows and macOS at the same time
+1. confirming the downstream installed-package and orchestration path in a clean repo
+2. keeping cleanup, human-blocked, overlap-reporting, grouped-PR, and orchestration flows stable across Windows and macOS at the same time
 3. deciding final publish posture and package visibility
 4. expanding automated CLI coverage where downstream adoption exposes real gaps
 5. keeping any future GitHub support scoped behind Azure DevOps-first design

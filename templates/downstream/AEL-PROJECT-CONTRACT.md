@@ -24,6 +24,16 @@ Fill this out in each downstream repo that adopts AEL.
 - Auto-complete allowed: yes/no
 - Human-block reasons the repo expects agents to use:
 
+## Orchestration Policy
+
+- Is orchestration allowed in this repo: yes/no
+- Maximum child count before human approval:
+- Require approval before grouped PR finalization: yes/no
+- Require approval before stopping an orchestration run: yes/no
+- Required reviewer behavior for grouped work:
+- Expected child roles for this repo (research / implement / validate / integration):
+- Any repo areas that should never be delegated automatically:
+
 ## Escalation Rules
 
 Agents must escalate to a human when:

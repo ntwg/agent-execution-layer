@@ -1,6 +1,11 @@
 *
+
+# tracked AEL docs and settings
 !.gitignore
 !agent-guide.md
 !install.json
 !project-contract.md
 !settings.json
+
+# local-only generated state
+orchestration/

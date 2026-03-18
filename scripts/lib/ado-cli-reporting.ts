@@ -4,6 +4,7 @@ import {
   buildRepairedWorkItemDescription,
   isMarkdownish,
 } from './pr-description.js';
+import { listOrchestrationRuns } from './orchestration/state.js';
 import type {
   AuditFinding,
   AzQueryResult,
@@ -731,6 +732,32 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
       return counts;
     }, {}),
   ).map(([branch, count]) => ({ branch, count }));
+  const orchestrationRuns = listOrchestrationRuns();
+  const activeOrchestrationRuns = orchestrationRuns.filter(
+    (run) => run.status === 'active' || run.status === 'blocked' || run.status === 'ready',
+  );
+  const orchestrationAwaitingReview = activeOrchestrationRuns.flatMap((run) =>
+    run.children
+      .filter((child) => child.awaitingOrchestratorReview)
+      .map((child) => ({
+        runId: run.runId,
+        childId: child.childId,
+        workItemId: child.workItemId,
+        parentWorkItemId: child.parentWorkItemId,
+        status: child.status,
+      })),
+  );
+  const orchestrationBlockedChildren = activeOrchestrationRuns.flatMap((run) =>
+    run.children
+      .filter((child) => child.status === 'blocked' || child.status === 'failed')
+      .map((child) => ({
+        runId: run.runId,
+        childId: child.childId,
+        workItemId: child.workItemId,
+        parentWorkItemId: child.parentWorkItemId,
+        status: child.status,
+      })),
+  );
 
   if (wantsJson(args)) {
     printJson({
@@ -757,6 +784,20 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
       branchTargets,
       activePullRequests: activePullRequestSummaries,
       recentDone: recentDoneSummaries,
+      orchestration: {
+        activeRuns: activeOrchestrationRuns.map((run) => ({
+          runId: run.runId,
+          status: run.status,
+          granularityMode: run.granularityMode,
+          parentIds: run.parentIds,
+          activeChildIds: run.activeChildIds,
+          pendingApprovals: run.approvalCheckpoints.filter(
+            (checkpoint) => checkpoint.status === 'pending',
+          ).length,
+        })),
+        awaitingOrchestratorReview: orchestrationAwaitingReview,
+        blockedChildren: orchestrationBlockedChildren,
+      },
     });
     return;
   }
@@ -768,6 +809,7 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
   console.log(`Blocked active items: ${blockedIds.length}`);
   console.log(`Human-blocked active items: ${humanBlockedIds.length}`);
   console.log(`Active PRs: ${activePullRequests.length}`);
+  console.log(`Active orchestration runs: ${activeOrchestrationRuns.length}`);
   console.log(`Stale active items (>= ${staleDays} days): ${staleActiveIds.length}`);
   console.log(`Recently done (<= ${recentDays} days): ${recentDoneIds.length}`);
 
@@ -814,6 +856,33 @@ export function commandReport(config: AgentExecutionConfig, args: string[]): voi
       const workItemCount = listPullRequestWorkItemIds(config, prId).length;
       console.log(
         `#${prId} | ${pr.title ?? '(untitled)'} | ${pr.status ?? 'unknown'} | items=${workItemCount}`,
+      );
+    }
+  }
+
+  if (activeOrchestrationRuns.length > 0) {
+    console.log('Active orchestration runs:');
+    for (const run of activeOrchestrationRuns) {
+      console.log(
+        `- ${run.runId} | ${run.status} | ${run.granularityMode} | parents=${run.parentIds.map((id) => `#${id}`).join(', ')} | active-children=${run.activeChildIds.length}`,
+      );
+    }
+  }
+
+  if (orchestrationAwaitingReview.length > 0) {
+    console.log('Children awaiting orchestrator review:');
+    for (const child of orchestrationAwaitingReview) {
+      console.log(
+        `- ${child.runId} | ${child.childId} | ${child.workItemId ? `#${child.workItemId}` : '(no work item)'} | parent=#${child.parentWorkItemId}`,
+      );
+    }
+  }
+
+  if (orchestrationBlockedChildren.length > 0) {
+    console.log('Blocked orchestration children:');
+    for (const child of orchestrationBlockedChildren) {
+      console.log(
+        `- ${child.runId} | ${child.childId} | ${child.status} | ${child.workItemId ? `#${child.workItemId}` : '(no work item)'}`,
       );
     }
   }

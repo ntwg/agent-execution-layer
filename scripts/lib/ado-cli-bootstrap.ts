@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import { parseAzureDevOpsRemote } from './ado-bootstrap.js';
+import { loadAelSettings } from './orchestration/settings.js';
 import type {
   AzureBoardNode,
   AzureDevOpsUserRecord,
@@ -27,6 +28,7 @@ import {
   DEFAULT_PROJECT_CONTRACT_FILENAME,
   DEFAULT_REPORT_DEFAULTS,
   DEFAULT_RUNTIME_SETTINGS,
+  DEFAULT_ORCHESTRATION_DIRECTORY,
   DEFAULT_SETTINGS_FILENAME,
   normalizeAgentKey,
   type AgentDefinition,
@@ -386,6 +388,7 @@ function resolveAdoptionPaths(manifest?: AdoptionInstallManifest): {
   projectContractPath: string;
   configPath: string;
   settingsPath: string;
+  orchestrationPath: string;
   rootInstructionsMode: 'managed' | 'external';
   rootInstructionsPath: string;
   installMode: 'minimal' | 'with-scripts';
@@ -406,6 +409,7 @@ function resolveAdoptionPaths(manifest?: AdoptionInstallManifest): {
     ),
     configPath: resolve(process.cwd(), manifest?.files?.config || DEFAULT_CONFIG_FILENAME),
     settingsPath: resolve(process.cwd(), manifest?.files?.settings || DEFAULT_SETTINGS_FILENAME),
+    orchestrationPath: resolve(process.cwd(), DEFAULT_ORCHESTRATION_DIRECTORY),
     rootInstructionsMode: manifest?.rootInstructions?.mode === 'external' ? 'external' : 'managed',
     rootInstructionsPath: resolve(process.cwd(), manifest?.rootInstructions?.path || 'AGENTS.md'),
     installMode: manifest?.mode === 'with-scripts' ? 'with-scripts' : 'minimal',
@@ -451,6 +455,18 @@ function buildAdoptionChecks(): DoctorCheck[] {
     ok: existsSync(paths.settingsPath),
     detail: existsSync(paths.settingsPath) ? paths.settingsPath : `missing ${paths.settingsPath}`,
   });
+  const loadedSettings = loadAelSettings();
+  const settingsWarnings = loadedSettings.warnings.filter((warning) =>
+    warning.includes(paths.settingsPath),
+  );
+  checks.push({
+    label: 'ael orchestration settings',
+    ok: existsSync(paths.settingsPath) && settingsWarnings.length === 0,
+    detail:
+      existsSync(paths.settingsPath) && settingsWarnings.length === 0
+        ? `loaded ${paths.settingsPath}`
+        : (settingsWarnings[0] ?? `unable to load ${paths.settingsPath}`),
+  });
 
   const gitignoreRequiredEntries = [
     '*',
@@ -459,6 +475,7 @@ function buildAdoptionChecks(): DoctorCheck[] {
     '!install.json',
     '!project-contract.md',
     '!settings.json',
+    'orchestration/',
   ];
   checks.push({
     label: 'ael local ignore',
@@ -469,6 +486,11 @@ function buildAdoptionChecks(): DoctorCheck[] {
       existsSync(paths.gitignorePath) && fileContains(paths.gitignorePath, gitignoreRequiredEntries)
         ? paths.gitignorePath
         : `expected ${paths.gitignorePath} to ignore local state and keep tracked AEL docs visible`,
+  });
+  checks.push({
+    label: 'ael orchestration state root',
+    ok: true,
+    detail: `${paths.orchestrationPath} (created on first orchestration run; kept local-only under .ael/)`,
   });
 
   const rootEntrySnippets = [
@@ -491,7 +513,14 @@ function buildAdoptionChecks(): DoctorCheck[] {
       : `expected ${paths.rootInstructionsPath} to reference ${rootEntrySnippets.join(' and ')}`,
   });
 
-  const packageJsonScripts = ['ael:status', 'ael:init', 'ael:doctor'];
+  const packageJsonScripts = [
+    'ael:status',
+    'ael:init',
+    'ael:doctor',
+    'ael:orchestrate',
+    'ael:orchestrate-status',
+    'ael:subagent-checkin',
+  ];
   const packageJson = readWorkspacePackageJson();
   const packageScripts = packageJson?.scripts;
   const hasPackageScripts =
@@ -521,6 +550,7 @@ function buildAdoptionNextSteps(checks: DoctorCheck[]): string[] {
     failedLabels.has('ael agent guide') ||
     failedLabels.has('ael project contract') ||
     failedLabels.has('ael settings') ||
+    failedLabels.has('ael orchestration settings') ||
     failedLabels.has('ael local ignore')
   ) {
     return [`re-run ${preferredWorkflowCommand('install', ' --force')}`];
@@ -540,6 +570,47 @@ function buildAdoptionNextSteps(checks: DoctorCheck[]): string[] {
   }
   return [
     `fix the failed AEL adoption checks above, then re-run ${preferredWorkflowCommand('doctor', ' --adoption')}`,
+  ];
+}
+
+function buildOrchestrationChecks(): DoctorCheck[] {
+  const paths = resolveAdoptionPaths(readAdoptionInstallManifest());
+  const settings = loadAelSettings();
+  const settingsWarnings = settings.warnings.filter((warning) =>
+    warning.includes(settings.settingsPath),
+  );
+  return [
+    {
+      label: 'orchestration settings',
+      ok: settingsWarnings.length === 0,
+      detail:
+        settingsWarnings.length === 0 ? `loaded ${settings.settingsPath}` : settingsWarnings[0],
+    },
+    {
+      label: 'orchestration local ignore',
+      ok:
+        existsSync(paths.gitignorePath) &&
+        fileContains(paths.gitignorePath, ['*', 'orchestration/', '!settings.json']),
+      detail:
+        existsSync(paths.gitignorePath) &&
+        fileContains(paths.gitignorePath, ['*', 'orchestration/', '!settings.json'])
+          ? paths.gitignorePath
+          : `expected ${paths.gitignorePath} to keep .ael/orchestration local-only`,
+    },
+    {
+      label: 'orchestration command surface',
+      ok: true,
+      detail: [
+        preferredWorkflowCommand('orchestrate'),
+        preferredWorkflowCommand('orchestrate-status'),
+        preferredWorkflowCommand('subagent-checkin'),
+      ].join(' | '),
+    },
+    {
+      label: 'orchestration state root',
+      ok: true,
+      detail: `${paths.orchestrationPath} (created on first orchestration run)`,
+    },
   ];
 }
 
@@ -612,6 +683,14 @@ export function buildDoctorNextSteps(checks: DoctorCheck[]): string[] {
   if (failedLabels.has('branch policies')) {
     return [
       `verify repository branch policy access for the target branch, then re-run ${preferredWorkflowCommand('doctor')}`,
+    ];
+  }
+  if (
+    failedLabels.has('orchestration settings') ||
+    failedLabels.has('orchestration local ignore')
+  ) {
+    return [
+      `repair the repo's .ael/settings.json or .ael/.gitignore orchestration contract, then re-run ${preferredWorkflowCommand('doctor', ' --orchestration')}`,
     ];
   }
   if (failedLabels.has('active pr merge readiness')) {
@@ -1078,8 +1157,12 @@ export async function commandInit(args: string[]): Promise<void> {
 export function commandDoctor(args: string[]): void {
   const smoke = hasFlag(args, '--smoke');
   const adoption = hasFlag(args, '--adoption');
+  const orchestration = hasFlag(args, '--orchestration');
   if (smoke && adoption) {
     fail('doctor accepts either --smoke or --adoption, not both.');
+  }
+  if ((smoke || adoption) && orchestration) {
+    fail('doctor --orchestration cannot be combined with --smoke or --adoption.');
   }
   if (adoption) {
     const checks = buildAdoptionChecks();
@@ -1357,6 +1440,10 @@ export function commandDoctor(args: string[]): void {
               },
         );
       }
+
+      if (orchestration) {
+        checks.push(...buildOrchestrationChecks());
+      }
     }
   }
 
@@ -1364,7 +1451,7 @@ export function commandDoctor(args: string[]): void {
   if (wantsJson(args)) {
     printJson({
       ok: failed.length === 0,
-      mode: smoke ? 'smoke' : 'doctor',
+      mode: smoke ? 'smoke' : orchestration ? 'orchestration' : 'doctor',
       authMode,
       configPath: CONFIG_PATH,
       checks,
@@ -1376,7 +1463,7 @@ export function commandDoctor(args: string[]): void {
     return;
   }
 
-  console.log(`=== AEL ${smoke ? 'SMOKE' : 'DOCTOR'} ===`);
+  console.log(`=== AEL ${smoke ? 'SMOKE' : orchestration ? 'ORCHESTRATION DOCTOR' : 'DOCTOR'} ===`);
   for (const check of checks) {
     printCheck(check.label, check.ok, check.detail);
   }
@@ -1401,6 +1488,18 @@ export function printHelp(): void {
   console.log('  backlog-create [--json]');
   console.log('  backlog-polish [--json]');
   console.log(
+    '  orchestrate --ids "123;124" [--agent <agent-key>] [--granularity grouped|isolated] [--plan-only] [--json]',
+  );
+  console.log('  orchestrate-status --run <run-id> [--json]');
+  console.log('  orchestrate-sync --run <run-id> [--json]');
+  console.log(
+    '  orchestrate-finalize --run <run-id> [--parent <id>] [--ready] [--auto-complete] [--approve-grouped-pr] [--json]',
+  );
+  console.log('  orchestrate-stop --run <run-id> [--approve-stop] [--json]');
+  console.log(
+    '  subagent-checkin --run <run-id> --child <child-id> --status started|done|blocked|failed [--summary "<text>"] [--note "<text>"] [--reason "<text>"] [--json]',
+  );
+  console.log(
     '  install [--agent-key <agent-key>] [--default-branch <branch>] [--entrypoint-file <path>] [--with-scripts|--minimal] [--no-root-agents] [--dry-run] [--explain] [--force] [--json]',
   );
   console.log('  refresh [--dry-run] [--json]');
@@ -1409,7 +1508,7 @@ export function printHelp(): void {
   console.log(
     '  init [--organization-url <url>] [--project <name>] [--repository <name>] [--repository-id <id>] [--default-branch <branch>] [--area-path "<path>"] [--iteration-path "<path>"] [--area-tags "auth;db"] [--rollout-branches "prod"] [--agents "codex;claude"] [--default-agent <agent-key>] [--platform auto|windows|mac|linux] [--force] [--json]',
   );
-  console.log('  doctor [--smoke|--adoption] [--json]');
+  console.log('  doctor [--smoke|--adoption|--orchestration] [--json]');
   console.log('  smoke [--json]');
   console.log('  enable [--json]');
   console.log('  disable [--json]');
@@ -1440,10 +1539,10 @@ export function printHelp(): void {
     '  commit --id 123 --message "<subject>" [--body "<details>"] [--all | --files "path1;path2"] [--json]',
   );
   console.log(
-    '  pr --id 123 [--title "<text>"] [--description "<text>"] [--target-branch <branch>] [--target <alias>] [--rollout] [--ready] [--auto-complete] [--reviewer "<name>|assigned"] [--no-reviewer] [--required-reviewer] [--sync-pr-tags|--no-sync-pr-tags] [--json]',
+    '  pr --id 123 [--ids "124;125"] [--title "<text>"] [--description "<text>"] [--target-branch <branch>] [--target <alias>] [--rollout] [--ready] [--auto-complete] [--reviewer "<name>|assigned"] [--no-reviewer] [--required-reviewer] [--sync-pr-tags|--no-sync-pr-tags] [--json]',
   );
   console.log(
-    '  done --id 123 [--summary "<outcome>"] [--impact "<business value>"] [--mapped-tables "db.schema.table;db.schema.table"] [--checks "build;fixtures;smoke"] [--changed-files "path1;path2"] [--pr "1234"] [--note "<extra context>"] [--skip-link-checks] [--json]',
+    '  done --id 123 [--ids "124;125"] [--summary "<outcome>"] [--impact "<business value>"] [--mapped-tables "db.schema.table;db.schema.table"] [--checks "build;fixtures;smoke"] [--changed-files "path1;path2"] [--pr "1234"] [--note "<extra context>"] [--skip-link-checks] [--json]',
   );
   console.log(
     '  retag [--id 123 | --ids "123;124"] [--state new|active|done|open|all] [--agent <agent-key>] [--tags "a;b"] [--limit 200] [--dry-run] [--json]',

@@ -12,6 +12,7 @@ import type {
   AzureDevOpsUserRecord,
   PullRequestLabelResult,
   PullRequestRecord,
+  WorkItemGroupSelection,
   WorkItemCommentResult,
   WorkItemShowResult,
 } from './ado-cli-types.js';
@@ -403,6 +404,24 @@ export function listPullRequestWorkItemIds(config: AgentExecutionConfig, prId: n
   );
 }
 
+export function ensurePullRequestWorkItemsLinked(
+  config: AgentExecutionConfig,
+  prId: number,
+  workItemIds: number[],
+): { workItemIds: number[]; addedWorkItemIds: number[] } {
+  const normalizedIds = Array.from(new Set(workItemIds.filter(Number.isFinite)));
+  const existingIds = listPullRequestWorkItemIds(config, prId);
+  const existingSet = new Set(existingIds);
+  const addedWorkItemIds = normalizedIds.filter((id) => !existingSet.has(id));
+  if (addedWorkItemIds.length > 0) {
+    addPullRequestWorkItems(config, prId, addedWorkItemIds);
+  }
+  return {
+    workItemIds: Array.from(new Set([...existingIds, ...normalizedIds])),
+    addedWorkItemIds,
+  };
+}
+
 export function addPullRequestWorkItems(
   config: AgentExecutionConfig,
   prId: number,
@@ -519,6 +538,172 @@ export function addPullRequestReviewer(
     reviewer,
     ...(required ? ['--required', 'true'] : []),
   ]);
+}
+
+export interface PullRequestReviewerSelection {
+  reviewer?: string;
+  required: boolean;
+}
+
+export interface CreateLinkedPullRequestOptions {
+  workItemIds: number[];
+  title: string;
+  description: string;
+  sourceBranch: string;
+  targetBranch: string;
+  draft: boolean;
+  autoComplete: boolean;
+  reviewer: PullRequestReviewerSelection;
+  syncPrTags: boolean;
+  syncTagMode: 'non-agent' | 'all';
+}
+
+export interface CreateLinkedPullRequestResult {
+  created: boolean;
+  pullRequestId: number;
+  title: string;
+  description: string;
+  sourceBranch: string;
+  targetBranch: string;
+  draft: boolean;
+  autoComplete: boolean;
+  reviewer: PullRequestReviewerSelection;
+  syncPrTags: boolean;
+  prTagSyncSupported: boolean;
+  addedTags: string[];
+  url?: string;
+}
+
+export function createLinkedPullRequest(
+  config: AgentExecutionConfig,
+  options: CreateLinkedPullRequestOptions,
+): CreateLinkedPullRequestResult {
+  if (options.workItemIds.length === 0) {
+    fail('createLinkedPullRequest requires at least one work item id.');
+  }
+
+  pushCurrentBranch(options.sourceBranch);
+
+  const existing = execJsonOrEmpty([
+    'az',
+    'repos',
+    'pr',
+    'list',
+    '--org',
+    config.organizationUrl,
+    '--project',
+    config.project,
+    '--repository',
+    config.repositoryId,
+    '--source-branch',
+    options.sourceBranch,
+    '--target-branch',
+    options.targetBranch,
+    '--status',
+    'active',
+    '-o',
+    'json',
+  ]) as Array<{ pullRequestId?: number; repository?: { webUrl?: string } }>;
+
+  if (existing[0]?.pullRequestId) {
+    const pullRequestId = Number(existing[0].pullRequestId);
+    const existingPrUrl = existing[0].repository?.webUrl
+      ? `${existing[0].repository?.webUrl}/pullrequest/${existing[0].pullRequestId}`
+      : undefined;
+    return {
+      created: false,
+      pullRequestId,
+      title: options.title,
+      description: options.description,
+      sourceBranch: options.sourceBranch,
+      targetBranch: options.targetBranch,
+      draft: options.draft,
+      autoComplete: options.autoComplete,
+      reviewer: options.reviewer,
+      syncPrTags: options.syncPrTags,
+      prTagSyncSupported: usesPatAuth(),
+      addedTags: [],
+      ...(existingPrUrl ? { url: existingPrUrl } : {}),
+    };
+  }
+
+  const createArgs = [
+    'az',
+    'repos',
+    'pr',
+    'create',
+    '--org',
+    config.organizationUrl,
+    '--project',
+    config.project,
+    '--repository',
+    config.repositoryId,
+    '--source-branch',
+    options.sourceBranch,
+    '--target-branch',
+    options.targetBranch,
+    '--title',
+    options.title,
+    '--work-items',
+    ...options.workItemIds.map(String),
+    '--transition-work-items',
+    'false',
+    '-o',
+    'json',
+  ];
+  appendMultilineArg(createArgs, '--description', options.description);
+  if (options.draft) createArgs.push('--draft', 'true');
+  if (options.autoComplete) createArgs.push('--auto-complete', 'true');
+
+  const created = execJsonOrEmpty(createArgs) as {
+    pullRequestId?: number;
+    repository?: { webUrl?: string };
+  };
+  if (!created.pullRequestId) fail('PR creation did not return a pull request id.');
+
+  if (options.reviewer.reviewer) {
+    addPullRequestReviewer(
+      config,
+      created.pullRequestId,
+      options.reviewer.reviewer,
+      options.reviewer.required,
+    );
+  }
+
+  const addedTags = options.syncPrTags
+    ? syncPullRequestLabels(config, created.pullRequestId, options.workItemIds, options.syncTagMode)
+    : [];
+
+  for (const workItemId of options.workItemIds) {
+    azJson(config, [
+      'boards',
+      'work-item',
+      'update',
+      '--id',
+      String(workItemId),
+      '--discussion',
+      `Opened linked PR #${created.pullRequestId} from branch ${options.sourceBranch}.`,
+    ]);
+  }
+
+  const prUrl = created.repository?.webUrl
+    ? `${created.repository.webUrl}/pullrequest/${created.pullRequestId}`
+    : undefined;
+  return {
+    created: true,
+    pullRequestId: created.pullRequestId,
+    title: options.title,
+    description: options.description,
+    sourceBranch: options.sourceBranch,
+    targetBranch: options.targetBranch,
+    draft: options.draft,
+    autoComplete: options.autoComplete,
+    reviewer: options.reviewer,
+    syncPrTags: options.syncPrTags,
+    prTagSyncSupported: usesPatAuth(),
+    addedTags,
+    ...(prUrl ? { url: prUrl } : {}),
+  };
 }
 
 export function listWorkItemComments(
@@ -725,7 +910,7 @@ export function commandCreate(config: AgentExecutionConfig, args: string[]): voi
   console.log(`URL: ${workItemUrl}`);
 }
 
-function updateWorkItemStateAndTags(
+export function updateWorkItemStateAndTags(
   config: AgentExecutionConfig,
   id: number,
   state: string | undefined,
@@ -750,7 +935,7 @@ function updateWorkItemStateAndTags(
   azJson(config, updateArgs);
 }
 
-function claimWorkItem(
+export function claimWorkItem(
   config: AgentExecutionConfig,
   id: number,
   agent: AgentKey,
@@ -1089,11 +1274,11 @@ export function commandCommit(config: AgentExecutionConfig, args: string[]): voi
   console.log(`Created linked commit for work item #${id}.`);
 }
 
-function resolveReviewerFromArgs(
+export function resolveReviewerFromArgs(
   config: AgentExecutionConfig,
   args: string[],
   item: WorkItemShowResult,
-): { reviewer?: string; required: boolean } {
+): PullRequestReviewerSelection {
   const explicitReviewer = normalizeText(parseArgValue(args, '--reviewer'));
   const reviewerRequired =
     hasFlag(args, '--required-reviewer') || config.prDefaults.reviewerRequired;
@@ -1127,18 +1312,34 @@ function resolveReviewerFromArgs(
   };
 }
 
-function shouldSyncPrTags(config: AgentExecutionConfig, args: string[]): boolean {
+export function shouldSyncPrTags(config: AgentExecutionConfig, args: string[]): boolean {
   if (hasFlag(args, '--sync-pr-tags')) return true;
   if (hasFlag(args, '--no-sync-pr-tags')) return false;
   return config.prDefaults.syncWorkItemTags;
 }
 
+export function resolveWorkItemGroupSelection(
+  args: string[],
+  command: 'pr' | 'done',
+): WorkItemGroupSelection {
+  const idRaw = parseArgValue(args, '--id');
+  if (!idRaw) fail(`${command} requires --id <workItemId>.`);
+  const primaryId = Number.parseInt(idRaw, 10);
+  if (!Number.isFinite(primaryId)) fail(`invalid --id "${idRaw}".`);
+  const companionIds = parseIdListArg(parseArgValue(args, '--ids'));
+  const workItemIds: number[] = [];
+  for (const id of [primaryId, ...companionIds]) {
+    if (!workItemIds.includes(id)) {
+      workItemIds.push(id);
+    }
+  }
+  return { primaryId, workItemIds };
+}
+
 export function commandPr(config: AgentExecutionConfig, args: string[]): void {
   ensureModeEnabled(config, args, 'pr');
-  const idRaw = parseArgValue(args, '--id');
-  if (!idRaw) fail('pr requires --id <workItemId>.');
-  const id = Number.parseInt(idRaw, 10);
-  if (!Number.isFinite(id)) fail(`invalid --id "${idRaw}".`);
+  const selection = resolveWorkItemGroupSelection(args, 'pr');
+  const id = selection.primaryId;
 
   const item = getWorkItem(config, id);
   const titleBase = String(item.fields?.['System.Title'] ?? `Work item ${id}`);
@@ -1163,118 +1364,69 @@ export function commandPr(config: AgentExecutionConfig, args: string[]): void {
   const syncPrTags = shouldSyncPrTags(config, args);
   const prTagSyncSupported = usesPatAuth();
 
-  pushCurrentBranch(currentBranch);
-
-  const existing = execJsonOrEmpty([
-    'az',
-    'repos',
-    'pr',
-    'list',
-    '--org',
-    config.organizationUrl,
-    '--project',
-    config.project,
-    '--repository',
-    config.repositoryId,
-    '--source-branch',
-    currentBranch,
-    '--target-branch',
+  const created = createLinkedPullRequest(config, {
+    workItemIds: selection.workItemIds,
+    title: prTitle,
+    description,
+    sourceBranch: currentBranch,
     targetBranch,
-    '--status',
-    'active',
-    '-o',
-    'json',
-  ]) as Array<{ pullRequestId?: number; repository?: { webUrl?: string } }>;
-  if (existing[0]?.pullRequestId) {
-    const existingPrUrl = existing[0].repository?.webUrl
-      ? `${existing[0].repository?.webUrl}/pullrequest/${existing[0].pullRequestId}`
-      : undefined;
-    if (wantsJson(args)) {
-      printJson({
-        ok: true,
-        created: false,
-        pullRequestId: existing[0].pullRequestId,
-        currentBranch,
-        targetBranch,
-        ...(existingPrUrl ? { url: existingPrUrl } : {}),
-      });
-      return;
-    }
-    console.log(`Active PR already exists for ${currentBranch}: #${existing[0].pullRequestId}`);
-    return;
-  }
-
-  const createArgs = [
-    'az',
-    'repos',
-    'pr',
-    'create',
-    '--org',
-    config.organizationUrl,
-    '--project',
-    config.project,
-    '--repository',
-    config.repositoryId,
-    '--source-branch',
-    currentBranch,
-    '--target-branch',
-    targetBranch,
-    '--title',
-    prTitle,
-    '--work-items',
-    String(id),
-    '--transition-work-items',
-    'false',
-    '-o',
-    'json',
-  ];
-  appendMultilineArg(createArgs, '--description', description);
-  if (draft) createArgs.push('--draft', 'true');
-  if (hasFlag(args, '--auto-complete')) createArgs.push('--auto-complete', 'true');
-
-  const created = execJsonOrEmpty(createArgs) as {
-    pullRequestId?: number;
-    repository?: { webUrl?: string };
-  };
-  if (!created.pullRequestId) fail('PR creation did not return a pull request id.');
-
-  if (reviewer.reviewer) {
-    addPullRequestReviewer(config, created.pullRequestId, reviewer.reviewer, reviewer.required);
-  }
-  const addedTags = syncPrTags
-    ? syncPullRequestLabels(config, created.pullRequestId, [id], config.prDefaults.syncTagMode)
-    : [];
-
-  azJson(config, [
-    'boards',
-    'work-item',
-    'update',
-    '--id',
-    String(id),
-    '--discussion',
-    `Opened linked PR #${created.pullRequestId} from branch ${currentBranch}.`,
-  ]);
-
-  const prUrl = created.repository?.webUrl
-    ? `${created.repository.webUrl}/pullrequest/${created.pullRequestId}`
+    draft,
+    autoComplete: hasFlag(args, '--auto-complete'),
+    reviewer,
+    syncPrTags,
+    syncTagMode: config.prDefaults.syncTagMode,
+  });
+  const linkedExisting = !created.created
+    ? ensurePullRequestWorkItemsLinked(config, created.pullRequestId, selection.workItemIds)
     : undefined;
+  const addedTags =
+    !created.created && syncPrTags
+      ? syncPullRequestLabels(
+          config,
+          created.pullRequestId,
+          linkedExisting?.workItemIds ?? selection.workItemIds,
+          config.prDefaults.syncTagMode,
+        )
+      : [];
+  if (!created.created) {
+    for (const linkedWorkItemId of linkedExisting?.addedWorkItemIds ?? []) {
+      azJson(config, [
+        'boards',
+        'work-item',
+        'update',
+        '--id',
+        String(linkedWorkItemId),
+        '--discussion',
+        `Linked to existing PR #${created.pullRequestId} from branch ${currentBranch}.`,
+      ]);
+    }
+  }
   if (wantsJson(args)) {
     printJson({
       ok: true,
-      created: true,
-      pullRequestId: created.pullRequestId,
-      title: prTitle,
-      description,
+      ...created,
+      id,
+      primaryId: selection.primaryId,
+      workItemIds: selection.workItemIds,
+      ...(linkedExisting ? { addedWorkItemIds: linkedExisting.addedWorkItemIds } : {}),
+      ...(!created.created
+        ? { linkedWorkItemIds: linkedExisting?.workItemIds ?? selection.workItemIds }
+        : {}),
       currentBranch,
-      targetBranch,
-      draft,
-      autoComplete: hasFlag(args, '--auto-complete'),
-      reviewer,
-      syncPrTags,
-      prTagSyncSupported,
-      addedTags,
-      ...(prUrl ? { url: prUrl } : {}),
     });
+    return;
+  }
+  if (!created.created) {
+    console.log(`Active PR already exists for ${currentBranch}: #${created.pullRequestId}`);
+    if ((linkedExisting?.addedWorkItemIds.length ?? 0) > 0) {
+      console.log(`Linked additional work items: ${linkedExisting?.addedWorkItemIds.join(', ')}`);
+    }
+    if (syncPrTags && created.prTagSyncSupported) {
+      console.log(
+        `PR tags: ${addedTags.length > 0 ? addedTags.join(', ') : '(no new tags added)'}`,
+      );
+    }
+    if (created.url) console.log(`URL: ${created.url}`);
     return;
   }
   console.log(`Created linked PR #${created.pullRequestId}${draft ? ' (draft)' : ''}`);
@@ -1288,33 +1440,38 @@ export function commandPr(config: AgentExecutionConfig, args: string[]): void {
       console.log('PR tags: skipped write-back under Azure CLI auth (use a PAT to sync labels)');
     } else {
       console.log(
-        `PR tags: ${addedTags.length > 0 ? addedTags.join(', ') : '(no new tags added)'}`,
+        `PR tags: ${created.addedTags.length > 0 ? created.addedTags.join(', ') : '(no new tags added)'}`,
       );
     }
   } else {
     console.log('PR tags: sync disabled');
   }
-  if (prUrl) console.log(`URL: ${prUrl}`);
+  if (created.url) console.log(`URL: ${created.url}`);
 }
 
-function validateDevelopmentLinks(
+function validateFinalizationLinks(
   config: AgentExecutionConfig,
-  id: number,
-  explicitPr?: string,
+  selection: WorkItemGroupSelection,
+  explicitPrId?: number,
 ): { ok: boolean; reasons: string[] } {
-  const linkedPrIds = getLinkedPullRequestIds(config, id);
-  const hasPr = linkedPrIds.length > 0 || Boolean(explicitPr);
-  const hasCommit = hasLinkedCommitArtifact(config, id) || hasLinkedCommit(id);
   const reasons: string[] = [];
-
-  if (!hasPr) {
-    reasons.push(
-      `No linked PR found for work item #${id}. Create PRs with ${preferredWorkflowCommand('pr', ` -- --id ${id}`)} or az repos pr create --work-items ${id}.`,
-    );
+  const explicitPrWorkItemIds =
+    explicitPrId !== undefined ? listPullRequestWorkItemIds(config, explicitPrId) : [];
+  for (const id of selection.workItemIds) {
+    const linkedPrIds = getLinkedPullRequestIds(config, id);
+    const hasPr =
+      linkedPrIds.length > 0 || (explicitPrId !== undefined && explicitPrWorkItemIds.includes(id));
+    if (!hasPr) {
+      reasons.push(
+        `No linked PR found for work item #${id}. Create PRs with ${preferredWorkflowCommand('pr', ` -- --id ${selection.primaryId}`)} or az repos pr create --work-items ${selection.workItemIds.join(' ')}.`,
+      );
+    }
   }
-  if (!hasCommit) {
+  const primaryHasCommit =
+    hasLinkedCommitArtifact(config, selection.primaryId) || hasLinkedCommit(selection.primaryId);
+  if (!primaryHasCommit) {
     reasons.push(
-      `No commit referencing AB#${id} was found. Use ${preferredWorkflowCommand('commit', ` -- --id ${id}`)} or prefix commit messages with AB#${id}.`,
+      `No commit referencing AB#${selection.primaryId} was found. Use ${preferredWorkflowCommand('commit', ` -- --id ${selection.primaryId}`)} or prefix commit messages with AB#${selection.primaryId}.`,
     );
   }
 
@@ -1324,12 +1481,33 @@ function validateDevelopmentLinks(
   };
 }
 
+function finalizeWorkItem(
+  config: AgentExecutionConfig,
+  id: number,
+  discussion: string,
+  doneFieldsApplied: Record<string, string | number | boolean>,
+): void {
+  azJson(config, ['boards', 'work-item', 'update', '--id', String(id), '--discussion', discussion]);
+  const updateArgs = [
+    'boards',
+    'work-item',
+    'update',
+    '--id',
+    String(id),
+    '--state',
+    config.stateMap.done,
+  ];
+  const doneFieldPairs = buildFieldPairs(doneFieldsApplied);
+  if (doneFieldPairs.length > 0) {
+    updateArgs.push('--fields', ...doneFieldPairs);
+  }
+  azJson(config, updateArgs);
+}
+
 export function commandDone(config: AgentExecutionConfig, args: string[]): void {
   ensureModeEnabled(config, args, 'done');
-  const idRaw = parseArgValue(args, '--id');
-  if (!idRaw) fail('done requires --id <workItemId>.');
-  const id = Number.parseInt(idRaw, 10);
-  if (!Number.isFinite(id)) fail(`invalid --id "${idRaw}".`);
+  const selection = resolveWorkItemGroupSelection(args, 'done');
+  const id = selection.primaryId;
   const summary = normalizeText(parseArgValue(args, '--summary'));
   const impact = normalizeText(parseArgValue(args, '--impact'));
   const checks = parseListArg(parseArgValue(args, '--checks'));
@@ -1337,10 +1515,11 @@ export function commandDone(config: AgentExecutionConfig, args: string[]): void 
   const changedFiles = parseListArg(parseArgValue(args, '--changed-files'));
   const note = normalizeText(parseArgValue(args, '--note'));
   const pr = normalizeText(parseArgValue(args, '--pr'));
+  const explicitPrId = pr && /^\d+$/u.test(pr) ? Number.parseInt(pr, 10) : undefined;
   const skipLinkChecks = hasFlag(args, '--skip-link-checks');
 
   if (!skipLinkChecks) {
-    const validation = validateDevelopmentLinks(config, id, pr);
+    const validation = validateFinalizationLinks(config, selection, explicitPrId);
     if (!validation.ok) {
       fail(validation.reasons.join('\n'));
     }
@@ -1356,31 +1535,16 @@ export function commandDone(config: AgentExecutionConfig, args: string[]): void 
     pr,
   });
 
-  azJson(config, ['boards', 'work-item', 'update', '--id', String(id), '--discussion', discussion]);
-  if (!wantsJson(args)) {
-    console.log(`Added completion summary comment to work item #${id}.`);
-  }
-
-  const updateArgs = [
-    'boards',
-    'work-item',
-    'update',
-    '--id',
-    String(id),
-    '--state',
-    config.stateMap.done,
-  ];
   const doneFieldsApplied = mergeFieldDefaults(config.workItemFieldDefaults.done);
-  const doneFieldPairs = buildFieldPairs(doneFieldsApplied);
-  if (doneFieldPairs.length > 0) {
-    updateArgs.push('--fields', ...doneFieldPairs);
+  for (const workItemId of selection.workItemIds) {
+    finalizeWorkItem(config, workItemId, discussion, doneFieldsApplied);
   }
-
-  azJson(config, updateArgs);
   if (wantsJson(args)) {
     printJson({
       ok: true,
       id,
+      primaryId: selection.primaryId,
+      workItemIds: selection.workItemIds,
       state: config.stateMap.done,
       ...(summary ? { summary } : {}),
       ...(impact ? { impact } : {}),
@@ -1394,5 +1558,7 @@ export function commandDone(config: AgentExecutionConfig, args: string[]): void 
     });
     return;
   }
-  console.log(`Marked work item #${id} -> state=${config.stateMap.done}`);
+  console.log(
+    `Marked work items ${selection.workItemIds.map((workItemId) => `#${workItemId}`).join(', ')} -> state=${config.stateMap.done}`,
+  );
 }

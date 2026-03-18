@@ -60,6 +60,52 @@ Recommended fix:
 3. re-run `ael backlog-create` or `ael backlog-polish`
 4. if the file is broken, restore it from the installed template or re-run `ael install --force`
 
+## `ael doctor --orchestration` fails
+
+Typical causes:
+
+- `.ael/settings.json` is missing the orchestration scaffold or contains invalid JSON
+- `.ael/.gitignore` no longer keeps `.ael/orchestration/` local-only
+- the downstream repo is still on an older AEL package version that predates orchestration commands
+
+Recommended fix:
+
+1. run `ael doctor --orchestration --json`
+2. if the package changed, run `ael refresh --dry-run` and then `ael refresh`
+3. if only the managed files are stale, run `ael upgrade --dry-run` and then `ael upgrade`
+4. if the repo intentionally customized `.ael/settings.json`, restore valid JSON and keep the `orchestration` block intact
+5. re-run `ael doctor --orchestration`
+
+## `ael orchestrate` creates a run but no child work
+
+Typical causes:
+
+- the selected items are small enough that the configured orchestration threshold decided no delegation is needed
+- the repo customized `.ael/settings.json` to disable validation/research child creation
+- the run is being reused and you are looking at an existing manifest instead of forcing a new plan
+
+Recommended fix:
+
+1. run `ael orchestrate-status -- --run <run-id> --json`
+2. inspect `granularityMode`, `children`, and `approvalCheckpoints`
+3. if you need a fresh plan, re-run `ael orchestrate -- --ids "<id;id>" --force`
+4. if the repo wants more aggressive delegation, adjust `.ael/settings.json` orchestration defaults
+
+## `ael subagent-checkin` does not unblock finalization
+
+Typical causes:
+
+- the child checked in as `blocked` or `failed`
+- the child summary is missing required detail for the repo’s orchestration check-in policy
+- the run still has pending approval checkpoints
+
+Recommended fix:
+
+1. run `ael orchestrate-status -- --run <run-id>`
+2. confirm the child status, pending approvals, and finalization state
+3. if the child is genuinely done, re-run `ael subagent-checkin -- --run <run-id> --child <child-id> --status done --summary "<summary>"`
+4. if the run is blocked on grouped PR or stop approval, resolve that human gate and retry the finalize/stop command with the required approval flag
+
 ## `ael init` cannot detect the Azure DevOps target
 
 Typical causes:

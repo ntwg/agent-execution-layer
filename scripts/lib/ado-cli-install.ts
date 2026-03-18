@@ -100,6 +100,12 @@ interface InstallTemplateContext {
   workflowReportCommand: string;
   workflowBacklogCreateCommand: string;
   workflowBacklogPolishCommand: string;
+  workflowOrchestrateCommand: string;
+  workflowOrchestrateStatusCommand: string;
+  workflowOrchestrateSyncCommand: string;
+  workflowOrchestrateFinalizeCommand: string;
+  workflowOrchestrateStopCommand: string;
+  workflowSubagentCheckinCommand: string;
 }
 
 interface OwnershipSummary {
@@ -431,6 +437,48 @@ function buildTemplateContext(args: {
       '',
       packageJsonExists,
     ),
+    workflowOrchestrateCommand: formatDownstreamWorkflowCommand(
+      'orchestrate',
+      installMode,
+      runner,
+      ' -- --ids "<id;id;id>"',
+      packageJsonExists,
+    ),
+    workflowOrchestrateStatusCommand: formatDownstreamWorkflowCommand(
+      'orchestrate-status',
+      installMode,
+      runner,
+      ' -- --run <run-id>',
+      packageJsonExists,
+    ),
+    workflowOrchestrateSyncCommand: formatDownstreamWorkflowCommand(
+      'orchestrate-sync',
+      installMode,
+      runner,
+      ' -- --run <run-id>',
+      packageJsonExists,
+    ),
+    workflowOrchestrateFinalizeCommand: formatDownstreamWorkflowCommand(
+      'orchestrate-finalize',
+      installMode,
+      runner,
+      ' -- --run <run-id> --ready',
+      packageJsonExists,
+    ),
+    workflowOrchestrateStopCommand: formatDownstreamWorkflowCommand(
+      'orchestrate-stop',
+      installMode,
+      runner,
+      ' -- --run <run-id>',
+      packageJsonExists,
+    ),
+    workflowSubagentCheckinCommand: formatDownstreamWorkflowCommand(
+      'subagent-checkin',
+      installMode,
+      runner,
+      ' -- --run <run-id> --child <child-id> --status <started|done|blocked|failed> --summary "<summary>"',
+      packageJsonExists,
+    ),
   };
 }
 
@@ -457,6 +505,12 @@ function applyInstallTemplate(
     workflowReportCommand: string;
     workflowBacklogCreateCommand: string;
     workflowBacklogPolishCommand: string;
+    workflowOrchestrateCommand: string;
+    workflowOrchestrateStatusCommand: string;
+    workflowOrchestrateSyncCommand: string;
+    workflowOrchestrateFinalizeCommand: string;
+    workflowOrchestrateStopCommand: string;
+    workflowSubagentCheckinCommand: string;
   },
 ): string {
   const validationBlock =
@@ -487,7 +541,16 @@ function applyInstallTemplate(
     .replaceAll('{{WORKFLOW_AUDIT_COMMAND}}', context.workflowAuditCommand)
     .replaceAll('{{WORKFLOW_REPORT_COMMAND}}', context.workflowReportCommand)
     .replaceAll('{{WORKFLOW_BACKLOG_CREATE_COMMAND}}', context.workflowBacklogCreateCommand)
-    .replaceAll('{{WORKFLOW_BACKLOG_POLISH_COMMAND}}', context.workflowBacklogPolishCommand);
+    .replaceAll('{{WORKFLOW_BACKLOG_POLISH_COMMAND}}', context.workflowBacklogPolishCommand)
+    .replaceAll('{{WORKFLOW_ORCHESTRATE_COMMAND}}', context.workflowOrchestrateCommand)
+    .replaceAll('{{WORKFLOW_ORCHESTRATE_STATUS_COMMAND}}', context.workflowOrchestrateStatusCommand)
+    .replaceAll('{{WORKFLOW_ORCHESTRATE_SYNC_COMMAND}}', context.workflowOrchestrateSyncCommand)
+    .replaceAll(
+      '{{WORKFLOW_ORCHESTRATE_FINALIZE_COMMAND}}',
+      context.workflowOrchestrateFinalizeCommand,
+    )
+    .replaceAll('{{WORKFLOW_ORCHESTRATE_STOP_COMMAND}}', context.workflowOrchestrateStopCommand)
+    .replaceAll('{{WORKFLOW_SUBAGENT_CHECKIN_COMMAND}}', context.workflowSubagentCheckinCommand);
 }
 
 function normalizeAelWorkflowBlock(content: string): string {
@@ -666,6 +729,7 @@ function buildOwnershipSummary(args: {
     ]),
     localOnlyFiles: uniqueStrings([
       resolve(args.workspace, manifestFiles?.config ?? DEFAULT_CONFIG_FILENAME),
+      resolve(args.workspace, '.ael/orchestration'),
     ]),
   };
 }

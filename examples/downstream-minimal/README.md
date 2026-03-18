@@ -24,8 +24,9 @@ Tracked files:
 Generated local state:
 
 - `.ael/config.local.json`
+- `.ael/orchestration/`
 
-That local config file is intentionally ignored by `.ael/.gitignore`.
+That local config file and the orchestration run state are intentionally ignored by `.ael/.gitignore`.
 
 Editable prompt settings:
 

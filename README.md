@@ -37,6 +37,7 @@ If you want to preview the downstream file changes first, run `npx ael install -
 - Produces a quick human-readable status report for active work, blocked items, overlap risks, PR targets, hierarchy counts, and recent completions
 - Identifies stale branches and PRs with first-class cleanup commands
 - Renders editable backlog-analysis prompts with `ael backlog-create` and `ael backlog-polish`
+- Adds Codex-app-native orchestration scaffolding so an orchestrator thread can plan child work, persist local run state, collect subagent check-ins, and finalize grouped or isolated PR flows through AEL
 
 ## Current Backend
 
@@ -48,6 +49,8 @@ This repo no longer ships a checked-in active target config. Run `npm run ael:in
 The long-term adoption model is package-based: install AEL in the downstream repo and call the `ael` bin entrypoint from that repo. See [docs/ADOPTING-AEL.md](docs/ADOPTING-AEL.md).
 
 The downstream bootstrap command is `ael install`. By default it keeps repo impact minimal: a small root `AGENTS.md` discovery stub, `.ael/.gitignore`, `.ael/install.json`, `.ael/agent-guide.md`, `.ael/project-contract.md`, and `.ael/settings.json`. Pass `--with-scripts` if the downstream repo also wants the full `package.json` `ael:*` workflow shortcut set, `--entrypoint-file <path>` if the root discovery stub should live somewhere other than `AGENTS.md`, `--no-root-agents` if the repo already has its own root instruction file and you want AEL to stay entirely under `.ael/`, `--dry-run` if you want a preview before writing anything, or `--explain` if you want a managed-vs-user-owned ownership summary. Use `ael refresh` when you want one command that updates the installed AEL dependency and then refreshes AEL-managed files. Keep `ael upgrade` for the narrower case where the dependency was already updated and you only want to sync the managed repo files without overwriting `.ael/project-contract.md`, `.ael/settings.json`, or `.ael/config.local.json`.
+
+By default, that downstream scaffold now includes orchestration settings in `.ael/settings.json`, plus local-only orchestration state under `.ael/orchestration/` for run manifests, child briefs, and event logs.
 
 If you want a copyable reference layout, start with [examples/downstream-minimal](examples/downstream-minimal).
 If you want the script-driven variant, use [examples/downstream-with-scripts](examples/downstream-with-scripts).
@@ -92,6 +95,11 @@ npm run ael:doctor
 npm run ael:validate-config
 npm run ael:backlog-create
 npm run ael:backlog-polish
+npm run ael:orchestrate -- --ids "<id;id;id>"
+npm run ael:orchestrate-status -- --run <run-id>
+npm run ael:orchestrate-sync -- --run <run-id>
+npm run ael:orchestrate-finalize -- --run <run-id>
+npm run ael:subagent-checkin -- --run <run-id> --child <child-id> --status done --summary "<summary>"
 npm run ael:status
 npm run ael:help
 ```
@@ -122,6 +130,12 @@ npm run ael:validate-config
 npm run ael:status
 npm run ael:backlog-create
 npm run ael:backlog-polish
+npm run ael:orchestrate -- --ids "<id;id;id>"
+npm run ael:orchestrate-status -- --run <run-id>
+npm run ael:orchestrate-sync -- --run <run-id>
+npm run ael:orchestrate-finalize -- --run <run-id>
+npm run ael:orchestrate-stop -- --run <run-id>
+npm run ael:subagent-checkin -- --run <run-id> --child <child-id> --status done --summary "<summary>"
 npm run ael:enable
 npm run ael:disable
 npm run ael:block -- --id <id> --reason human-approval-needed
@@ -163,11 +177,14 @@ npm run ael:report
 - `npx ael install --dry-run` previews downstream adoption changes without mutating the repo
 - `npx ael refresh` updates the installed AEL dependency in a downstream repo and then runs the managed-file refresh automatically
 - `npx ael upgrade` refreshes AEL-managed downstream files after dependency updates while preserving repo-owned `.ael/project-contract.md`, `.ael/settings.json`, and `.ael/config.local.json`
+- `npx ael doctor --orchestration` validates the orchestration prompt/settings scaffold, local ignore contract, and command surface
+- `npx ael orchestrate -- --ids "<id;id;id>"` creates a durable orchestration run, child work items, and generated Codex subagent briefs
+- `npx ael orchestrate-status`, `orchestrate-sync`, `orchestrate-finalize`, `orchestrate-stop`, and `subagent-checkin` keep the Codex app orchestrator thread, Azure DevOps state, and local `.ael/orchestration/*` manifests synchronized
 - `npx ael install --explain`, `npx ael upgrade --explain`, and `npx ael uninstall --explain` print the managed/user-owned/local-only file contract
 - `npx ael uninstall` removes AEL-managed downstream files and exact-match `ael:*` script shims
 - `npx ael cleanup-branches` and `npx ael cleanup-prs` identify stale workflow residue before it turns into repo noise
 - `npm run ael:smoke` runs the doctor flow plus read-only work item queries, PR list queries, and active PR merge-readiness inspection
-- `status`, `validate-config`, `backlog-create`, `backlog-polish`, `init`, `doctor`, `smoke`, `upgrade`, `list`, `next`, `create`, `claim`, `branch`, `start`, `commit`, `pr`, `done`, `retag`, `audit`, `report`, `enable`, `disable`, `block`, `unblock`, `cleanup-branches`, and `cleanup-prs` all support `--json` for agent-safe parsing
+- `status`, `validate-config`, `backlog-create`, `backlog-polish`, `init`, `doctor`, `smoke`, `upgrade`, `list`, `next`, `create`, `claim`, `branch`, `start`, `commit`, `pr`, `done`, `retag`, `audit`, `report`, `enable`, `disable`, `block`, `unblock`, `cleanup-branches`, `cleanup-prs`, `orchestrate`, `orchestrate-status`, `orchestrate-sync`, `orchestrate-finalize`, `orchestrate-stop`, and `subagent-checkin` all support `--json` for agent-safe parsing
 
 ## Config Shape
 
@@ -181,6 +198,7 @@ npm run ael:report
 - `branching` config defines development branches, rollout branches, and branch aliases like `prod`
 - `hierarchyDefaults` maps AEL work kinds like `feature` or `backlog` to your Azure DevOps work item types
 - `runtime.platform` lets a local config pin command behavior to `auto`, `windows`, `mac`, or `linux`
+- `.ael/settings.json` now also carries orchestration defaults, role prompts, tag prefixes, approval gates, and subagent check-in policy
 
 ## Files
 
@@ -199,7 +217,8 @@ npm run ael:report
 - `.ael/config.local.json`: generated local config written by `ael:init`
 - `.ael/agent-guide.md`: downstream agent workflow instructions
 - `.ael/project-contract.md`: downstream repo-specific validation and escalation policy
-- `.ael/settings.json`: editable downstream prompt settings for backlog-create/backlog-polish
+- `.ael/settings.json`: editable downstream prompt settings for backlog planning and orchestration
+- `.ael/orchestration/*`: local-only run manifests, child briefs, and event logs for Codex-app-native orchestration
 - `agent-execution.config.example.json`: reusable template
 - `docs/ADOPTING-AEL.md`: downstream adoption guide
 - `docs/FIRST-PUSH-CHECKLIST.md`: release and publish-readiness checklist

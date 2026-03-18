@@ -22,6 +22,12 @@ npm run ael:smoke
 npm run ael:validate-config
 npm run ael:backlog-create
 npm run ael:backlog-polish
+npm run ael:orchestrate -- --ids "<id;id;id>"
+npm run ael:orchestrate-status -- --run <run-id>
+npm run ael:orchestrate-sync -- --run <run-id>
+npm run ael:orchestrate-finalize -- --run <run-id>
+npm run ael:orchestrate-stop -- --run <run-id>
+npm run ael:subagent-checkin -- --run <run-id> --child <child-id> --status done --summary "<summary>"
 npm run ael:status
 npm run ael:block -- --id <id> --reason human-approval-needed
 npm run ael:unblock -- --id <id>
@@ -29,7 +35,9 @@ npm run ael:create -- --title "<task>" --human-summary "<goal>" --agent-context 
 npm run ael:start -- --id <id> --agent codex --assigned-to "<ado-email-or-id>"
 npm run ael:commit -- --id <id> --all --message "<subject>"
 npm run ael:pr -- --id <id> --ready
+npm run ael:pr -- --id <primary-id> --ids "<primary-id;peer-id>" --ready
 npm run ael:done -- --id <id> --summary "<outcome>" --impact "<business value>" --pr "<pr-id>"
+npm run ael:done -- --id <primary-id> --ids "<primary-id;peer-id>" --summary "<outcome>" --impact "<business value>"
 npm run ael:cleanup-branches -- --dry-run
 npm run ael:cleanup-prs -- --dry-run
 ```
@@ -48,6 +56,12 @@ Work item descriptions and closeout comments are written as rich text so section
 ## PR Behavior
 
 PR descriptions are emitted as sectioned plain text with real line breaks.
+
+Grouped work handling:
+
+- `ael pr -- --id <primary> --ids "<primary;peer>"` can open or reconcile one PR across multiple linked work items
+- `ael done -- --id <primary> --ids "<primary;peer>" ...` validates that the selected PR actually links every grouped work item before closing them
+- when an existing PR already exists for a grouped selection, AEL adds any missing work item links instead of silently no-oping
 
 For multi-branch repos, `ael pr --target prod` or `ael pr --rollout` can target a configured rollout branch instead of the default development branch.
 
@@ -93,10 +107,33 @@ npm run ael:report
 - active PR target branches
 - stale active work
 - recently closed items
+- active orchestration runs
+- children awaiting orchestrator review
+- blocked orchestration children
 
 Use `ael block` and `ael unblock` when work is waiting on a human or external setup so the reason is explicit in tags and reports instead of hidden in notes.
 
 Use `ael cleanup-branches --dry-run` and `ael cleanup-prs --dry-run` to identify merged branches, closed-item branches, stale drafts, closed-item PRs, and source branches that are no longer ahead of their targets.
+
+## Orchestration
+
+AEL can now act as the durable workflow layer for a Codex app orchestrator thread. The Codex app handles native subagent spawning and conversation flow; AEL owns the repo-local state, Azure DevOps child work items, check-ins, approvals, and final PR discipline.
+
+Typical flow:
+
+1. `ael orchestrate -- --ids "<id;id;id>"` creates the orchestration run, chooses grouped or isolated PR mode, creates child task items, and writes generated orchestrator/child briefs under `.ael/orchestration/`
+2. the orchestrator thread reads the generated prompt and spawns native Codex subagents as needed
+3. each child checks in with `ael subagent-checkin`
+4. the orchestrator reconciles local and ADO state with `ael orchestrate-status` and `ael orchestrate-sync`
+5. the orchestrator opens the final PR with `ael orchestrate-finalize`
+
+Important rules:
+
+- the orchestrator is the final integration and PR authority
+- child agents do not open the final PR or mark parent items done directly
+- `.ael/orchestration/*` is intentionally local-only state
+- ADO child tasks remain the durable public record of delegated work
+- if the repo requires grouped PR approval or stop approval, AEL records a pending checkpoint and requires `--approve-grouped-pr` or `--approve-stop` on the retry command after human approval
 
 ## Config Validation
 
@@ -125,6 +162,7 @@ npm run ael:validate-config
 - Azure CLI or PAT-backed Azure DevOps auth
 - configured default assignee identity resolution
 - target-branch policy visibility
+- `doctor --orchestration` checks the orchestration settings scaffold, `.ael/orchestration/` local-state contract, and the orchestration command surface
 
 `ael:smoke` adds read-only work item and PR queries on top of the doctor checks, plus active PR merge-readiness inspection.
 
@@ -153,6 +191,12 @@ For agent-safe parsing, these commands support `--json`:
 - `unblock`
 - `cleanup-branches`
 - `cleanup-prs`
+- `orchestrate`
+- `orchestrate-status`
+- `orchestrate-sync`
+- `orchestrate-finalize`
+- `orchestrate-stop`
+- `subagent-checkin`
 - `enable`
 - `disable`
 
@@ -181,7 +225,7 @@ The long-term downstream integration model is package-based:
 - optionally point the discovery stub at a custom root file with `ael install --entrypoint-file <path>`
 - optionally refresh managed files later with `ael upgrade --explain`
 - optionally remove AEL later with `ael uninstall` or preview cleanup with `ael uninstall --dry-run`
-- customize backlog prompt templates in `.ael/settings.json`
+- customize backlog and orchestration prompt templates in `.ael/settings.json`
 - keep repo-specific validation and escalation rules in the downstream repo
 
 See [docs/ADOPTING-AEL.md](./ADOPTING-AEL.md), [examples/downstream-minimal](../examples/downstream-minimal), and `templates/downstream/*`.

@@ -110,6 +110,8 @@ test('install writes downstream repo contract files without mutating package.jso
   assert.match(guide, /`npm run lint`/);
   assert.match(guide, /npx ael backlog-create/);
   assert.match(guide, /npx ael backlog-polish/);
+  assert.match(guide, /npx ael orchestrate/);
+  assert.match(guide, /\.ael\/orchestration/);
 
   const contractPath = join(workspace, '.ael', 'project-contract.md');
   assert.ok(existsSync(contractPath));
@@ -147,10 +149,24 @@ test('install writes downstream repo contract files without mutating package.jso
   const settingsPath = join(workspace, '.ael', 'settings.json');
   assert.ok(existsSync(settingsPath));
   const settings = JSON.parse(readFileSync(settingsPath, 'utf8')) as {
-    promptTemplates: { backlogCreate: string; backlogPolish: string };
+    promptTemplates: {
+      backlogCreate: string;
+      backlogPolish: string;
+      orchestratorMaster: string;
+      orchestratorChild: string;
+      orchestratorFinalize: string;
+    };
+    orchestration: { defaults: { maxParallelChildren: number } };
   };
   assert.match(settings.promptTemplates.backlogCreate, /Identify meaningful gaps/);
   assert.match(settings.promptTemplates.backlogPolish, /Improve the clarity/);
+  assert.match(settings.promptTemplates.orchestratorMaster, /You are the orchestrator/);
+  assert.match(settings.promptTemplates.orchestratorChild, /You are a Codex subagent/);
+  assert.match(
+    settings.promptTemplates.orchestratorFinalize,
+    /You are finalizing orchestration run/,
+  );
+  assert.equal(settings.orchestration.defaults.maxParallelChildren, 3);
 
   const statusJson = JSON.parse(runCli(['status', '--json'], workspace)) as {
     nextSteps: string[];
@@ -199,6 +215,12 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   assert.ok(summary.scripts.added.includes('ael:uninstall'));
   assert.ok(summary.scripts.added.includes('ael:backlog-create'));
   assert.ok(summary.scripts.added.includes('ael:backlog-polish'));
+  assert.ok(summary.scripts.added.includes('ael:orchestrate'));
+  assert.ok(summary.scripts.added.includes('ael:orchestrate-status'));
+  assert.ok(summary.scripts.added.includes('ael:orchestrate-sync'));
+  assert.ok(summary.scripts.added.includes('ael:orchestrate-finalize'));
+  assert.ok(summary.scripts.added.includes('ael:orchestrate-stop'));
+  assert.ok(summary.scripts.added.includes('ael:subagent-checkin'));
   assert.ok(summary.scripts.added.includes('ael:init'));
   assert.ok(summary.scripts.added.includes('ael:block'));
   assert.ok(summary.scripts.added.includes('ael:unblock'));
@@ -219,6 +241,9 @@ test('install --with-scripts writes downstream package scripts and keeps script-
   assert.equal(packageJson.scripts['ael:uninstall'], 'ael uninstall');
   assert.equal(packageJson.scripts['ael:backlog-create'], 'ael backlog-create');
   assert.equal(packageJson.scripts['ael:backlog-polish'], 'ael backlog-polish');
+  assert.equal(packageJson.scripts['ael:orchestrate'], 'ael orchestrate');
+  assert.equal(packageJson.scripts['ael:orchestrate-status'], 'ael orchestrate-status --json');
+  assert.equal(packageJson.scripts['ael:subagent-checkin'], 'ael subagent-checkin --json');
   assert.equal(packageJson.scripts['ael:status'], 'ael status --json');
   assert.equal(packageJson.scripts['ael:doctor'], 'ael doctor --json');
   assert.equal(packageJson.scripts['ael:block'], 'ael block');

@@ -277,3 +277,104 @@ export interface UninstallSummary {
     localOnlyFiles: string[];
   };
 }
+
+export interface WorkItemGroupSelection {
+  primaryId: number;
+  workItemIds: number[];
+}
+
+export type OrchestrationRole = 'research' | 'implement' | 'validate' | 'integration';
+export type OrchestrationMode = 'tool' | 'handoff';
+export type RunGranularityMode = 'isolated' | 'grouped';
+export type OrchestrationChildStatus =
+  | 'planned'
+  | 'started'
+  | 'done'
+  | 'blocked'
+  | 'failed'
+  | 'stopped';
+export type OrchestrationRunStatus = 'active' | 'blocked' | 'ready' | 'stopped' | 'completed';
+export type ApprovalCheckpointStatus = 'pending' | 'resolved';
+
+export interface ApprovalCheckpoint {
+  id: string;
+  reason: string;
+  status: ApprovalCheckpointStatus;
+  childId?: string;
+  childWorkItemId?: number;
+  parentWorkItemId?: number;
+  note?: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export interface OrchestrationCheckin {
+  runId: string;
+  childId: string;
+  status: 'started' | 'done' | 'blocked' | 'failed';
+  summary?: string;
+  note?: string;
+  reason?: string;
+  at: string;
+}
+
+export interface OrchestrationParentPlan {
+  workItemId: number;
+  title: string;
+  branchName: string;
+  areaTags: string[];
+  pullRequestId?: number;
+  finalizedAt?: string;
+}
+
+export interface OrchestrationChild {
+  childId: string;
+  parentWorkItemId: number;
+  relatedParentIds?: number[];
+  workItemId?: number;
+  title: string;
+  role: OrchestrationRole;
+  mode: OrchestrationMode;
+  status: OrchestrationChildStatus;
+  awaitingOrchestratorReview: boolean;
+  areaTags: string[];
+  tags: string[];
+  branchName?: string;
+  briefPath: string;
+  manifestPath: string;
+  prompt: string;
+  summary?: string;
+  note?: string;
+  checkins: OrchestrationCheckin[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrchestrationFinalizationState {
+  status: 'pending' | 'ready' | 'finalized' | 'stopped';
+  finalizedAt?: string;
+  pullRequestIds: number[];
+  outstandingValidation: string[];
+}
+
+export interface OrchestrationRun {
+  runId: string;
+  orchestratorAgent: string;
+  parentIds: number[];
+  status: OrchestrationRunStatus;
+  granularityMode: RunGranularityMode;
+  baseBranch: string;
+  groupedBranchName?: string;
+  parentPlans: OrchestrationParentPlan[];
+  activeChildIds: string[];
+  children: OrchestrationChild[];
+  approvalCheckpoints: ApprovalCheckpoint[];
+  finalization: OrchestrationFinalizationState;
+  integrationChecklist: string[];
+  orchestratorPrompt: string;
+  briefPath: string;
+  manifestPath: string;
+  createdAt: string;
+  updatedAt: string;
+  stoppedAt?: string;
+}

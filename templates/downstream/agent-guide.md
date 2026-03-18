@@ -46,7 +46,28 @@ Run these before moving a PR out of draft:
 Repo-specific policy lives in:
 
 - `.ael/project-contract.md`
-- `.ael/settings.json` controls the backlog-create/backlog-polish prompt templates
+- `.ael/settings.json` controls backlog and orchestration prompt templates plus orchestration policy defaults
+
+## Orchestration
+
+Use orchestration when one backlog item is large enough to benefit from delegation, or when a related set of items can safely move together under one orchestrator.
+
+Primary orchestration commands:
+
+- `{{WORKFLOW_ORCHESTRATE_COMMAND}}`
+- `{{WORKFLOW_ORCHESTRATE_STATUS_COMMAND}}`
+- `{{WORKFLOW_ORCHESTRATE_SYNC_COMMAND}}`
+- `{{WORKFLOW_ORCHESTRATE_FINALIZE_COMMAND}}`
+- `{{WORKFLOW_ORCHESTRATE_STOP_COMMAND}}`
+- `{{WORKFLOW_SUBAGENT_CHECKIN_COMMAND}}`
+
+Important rules:
+
+- the orchestrator remains the final integration and PR authority
+- Codex subagents should use the generated briefs under `.ael/orchestration/`
+- local orchestration manifests, child briefs, and event logs live under `.ael/orchestration/` and are intentionally local-only
+- child agents must check in explicitly instead of silently disappearing
+- grouped work should only be finalized after the orchestrator verifies all required child work and repo validations
 
 ## Backlog Hygiene
 

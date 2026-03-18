@@ -358,6 +358,12 @@ if (args[0] === 'account' && args[1] === 'get-access-token') {
 } else if (args[0] === 'repos' && args[1] === 'pr' && args[2] === 'work-item' && args[3] === 'list') {
   const pr = ensurePullRequest(state, Number(value('--id')));
   outJson((pr.workItemIds ?? []).map(id => ({ id })));
+} else if (args[0] === 'repos' && args[1] === 'pr' && args[2] === 'work-item' && args[3] === 'add') {
+  const pr = ensurePullRequest(state, Number(value('--id')));
+  const ids = values('--work-items').map(id => Number(id)).filter(Number.isFinite);
+  pr.workItemIds = [...new Set([...(pr.workItemIds ?? []), ...ids])];
+  saveState(state);
+  outJson({ ok: true, workItemIds: pr.workItemIds });
 } else if (args[0] === 'repos' && args[1] === 'pr' && args[2] === 'update') {
   const pr = ensurePullRequest(state, Number(value('--id')));
   const description = joinedValue('--description');
@@ -1119,7 +1125,7 @@ test('report, audit, and retag emit structured json', (t) => {
 
   const report = JSON.parse(
     runCli(
-      ['report', '--limit', '10', '--stale-days', '7', '--recent-days', '7', '--json'],
+      ['report', '--limit', '10', '--stale-days', '7', '--recent-days', '30', '--json'],
       workspace,
       env,
     ),
@@ -1135,6 +1141,11 @@ test('report, audit, and retag emit structured json', (t) => {
     branchTargets: Array<{ branch: string; count: number }>;
     activePullRequests: Array<{ pullRequestId: number; workItemCount: number; tags: string[] }>;
     recentDone: Array<{ id: number }>;
+    orchestration: {
+      activeRuns: Array<{ runId: string }>;
+      awaitingOrchestratorReview: Array<{ childId: string }>;
+      blockedChildren: Array<{ childId: string }>;
+    };
   };
   assert.equal(report.ok, true);
   assert.deepEqual(report.counts, {
@@ -1161,6 +1172,9 @@ test('report, audit, and retag emit structured json', (t) => {
   assert.equal(report.activePullRequests[0].pullRequestId, 200);
   assert.equal(report.activePullRequests[0].workItemCount, 1);
   assert.deepEqual(report.activePullRequests[0].tags, []);
+  assert.deepEqual(report.orchestration.activeRuns, []);
+  assert.deepEqual(report.orchestration.awaitingOrchestratorReview, []);
+  assert.deepEqual(report.orchestration.blockedChildren, []);
   assert.deepEqual(
     report.recentDone.map((item) => item.id),
     [102],
@@ -1201,4 +1215,429 @@ test('report, audit, and retag emit structured json', (t) => {
   assert.ok(
     audit.findings.some((finding) => finding.type === 'pr-tags' && finding.scope === 'PR#200'),
   );
+});
+
+test('pr and done support grouped work item selections', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const { binDir, gitCommandPath, azCommandPath, curlCommandPath, gitStatePath, azStatePath } =
+    installStubCommands(workspace);
+  writeConfig(workspace);
+
+  const env = {
+    PATH: prependPathEntry(binDir),
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
+    AEL_CMD_CURL: curlCommandPath,
+    AEL_WRITE_GIT_STATE: gitStatePath,
+    AEL_WRITE_AZ_STATE: azStatePath,
+  };
+
+  writeAzState(azStatePath, {
+    nextWorkItemId: 110,
+    nextPrId: 200,
+    workItems: {
+      '100': {
+        id: 100,
+        fields: {
+          'System.Title': 'Primary grouped item',
+          'System.State': 'Active',
+          'System.Description': 'Grouped primary item',
+          'System.WorkItemType': 'Task',
+          'System.Tags': 'agent-managed;frontend',
+        },
+        relations: [],
+        discussions: [],
+        comments: [],
+      },
+      '101': {
+        id: 101,
+        fields: {
+          'System.Title': 'Companion grouped item',
+          'System.State': 'Active',
+          'System.Description': 'Grouped companion item',
+          'System.WorkItemType': 'Task',
+          'System.Tags': 'agent-managed;frontend',
+        },
+        relations: [],
+        discussions: [],
+        comments: [],
+      },
+      '102': {
+        id: 102,
+        fields: {
+          'System.Title': 'Second companion item',
+          'System.State': 'Active',
+          'System.Description': 'Another grouped item',
+          'System.WorkItemType': 'Task',
+          'System.Tags': 'agent-managed;frontend',
+        },
+        relations: [],
+        discussions: [],
+        comments: [],
+      },
+      '103': {
+        id: 103,
+        fields: {
+          'System.Title': 'Late linked companion item',
+          'System.State': 'Active',
+          'System.Description': 'Late grouped item',
+          'System.WorkItemType': 'Task',
+          'System.Tags': 'agent-managed;frontend',
+        },
+        relations: [],
+        discussions: [],
+        comments: [],
+      },
+    },
+    pullRequests: [],
+  });
+
+  const createdPr = JSON.parse(
+    runCli(['pr', '--id', '100', '--ids', '101;102', '--ready', '--json'], workspace, env),
+  ) as {
+    ok: boolean;
+    created: boolean;
+    pullRequestId: number;
+    primaryId: number;
+    workItemIds: number[];
+  };
+  assert.equal(createdPr.ok, true);
+  assert.equal(createdPr.created, true);
+  assert.equal(createdPr.primaryId, 100);
+  assert.deepEqual(createdPr.workItemIds, [100, 101, 102]);
+
+  const addedToExistingPr = JSON.parse(
+    runCli(['pr', '--id', '100', '--ids', '101;102;103', '--ready', '--json'], workspace, env),
+  ) as {
+    ok: boolean;
+    created: boolean;
+    pullRequestId: number;
+    addedWorkItemIds?: number[];
+    linkedWorkItemIds?: number[];
+  };
+  assert.equal(addedToExistingPr.ok, true);
+  assert.equal(addedToExistingPr.created, false);
+  assert.deepEqual(addedToExistingPr.addedWorkItemIds, [103]);
+  assert.deepEqual(addedToExistingPr.linkedWorkItemIds, [100, 101, 102, 103]);
+
+  runCli(
+    ['commit', '--id', '100', '--all', '--message', 'Grouped completion trace'],
+    workspace,
+    env,
+  );
+
+  const groupedDone = JSON.parse(
+    runCli(
+      [
+        'done',
+        '--id',
+        '100',
+        '--ids',
+        '101;102',
+        '--pr',
+        '200',
+        '--summary',
+        'Completed grouped work',
+        '--impact',
+        'Keeps grouped items synchronized',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
+    ok: boolean;
+    primaryId: number;
+    workItemIds: number[];
+    state: string;
+  };
+  assert.equal(groupedDone.ok, true);
+  assert.equal(groupedDone.primaryId, 100);
+  assert.deepEqual(groupedDone.workItemIds, [100, 101, 102]);
+  assert.equal(groupedDone.state, 'Closed');
+
+  const azState = JSON.parse(readFileSync(azStatePath, 'utf8')) as {
+    workItems: Record<string, { fields: Record<string, unknown>; discussions: string[] }>;
+    pullRequests: Array<{ pullRequestId: number; workItemIds: number[] }>;
+  };
+  assert.deepEqual(azState.pullRequests[0]?.workItemIds, [100, 101, 102, 103]);
+  assert.equal(azState.workItems['100']?.fields['System.State'], 'Closed');
+  assert.equal(azState.workItems['101']?.fields['System.State'], 'Closed');
+  assert.equal(azState.workItems['102']?.fields['System.State'], 'Closed');
+  assert.match(azState.workItems['101']?.discussions.at(-1) ?? '', /Completed grouped work/);
+});
+
+test('done fails when an explicit PR omits one grouped companion item', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const { binDir, gitCommandPath, azCommandPath, curlCommandPath, gitStatePath, azStatePath } =
+    installStubCommands(workspace);
+  writeConfig(workspace);
+
+  const env = {
+    PATH: prependPathEntry(binDir),
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
+    AEL_CMD_CURL: curlCommandPath,
+    AEL_WRITE_GIT_STATE: gitStatePath,
+    AEL_WRITE_AZ_STATE: azStatePath,
+  };
+
+  writeAzState(azStatePath, {
+    nextWorkItemId: 110,
+    nextPrId: 201,
+    workItems: {
+      '100': {
+        id: 100,
+        fields: {
+          'System.Title': 'Primary grouped item',
+          'System.State': 'Active',
+          'System.Description': 'Grouped primary item',
+          'System.WorkItemType': 'Task',
+        },
+        relations: [],
+        discussions: [],
+        comments: [],
+      },
+      '101': {
+        id: 101,
+        fields: {
+          'System.Title': 'Companion grouped item',
+          'System.State': 'Active',
+          'System.Description': 'Grouped companion item',
+          'System.WorkItemType': 'Task',
+        },
+        relations: [],
+        discussions: [],
+        comments: [],
+      },
+      '102': {
+        id: 102,
+        fields: {
+          'System.Title': 'Missing linked companion item',
+          'System.State': 'Active',
+          'System.Description': 'Grouped companion item',
+          'System.WorkItemType': 'Task',
+        },
+        relations: [],
+        discussions: [],
+        comments: [],
+      },
+    },
+    pullRequests: [
+      {
+        pullRequestId: 200,
+        title: 'AB#100 Grouped',
+        description: 'Grouped PR',
+        sourceBranch: 'main',
+        targetBranch: 'main',
+        sourceRefName: 'refs/heads/main',
+        targetRefName: 'refs/heads/main',
+        status: 'active',
+        isDraft: false,
+        repository: {
+          webUrl: 'https://dev.azure.com/example-org/example-project/_git/example-repo',
+        },
+        workItemIds: [100, 101],
+        labels: [],
+        reviewers: [],
+      },
+    ],
+  });
+
+  runCli(
+    ['commit', '--id', '100', '--all', '--message', 'Grouped completion trace'],
+    workspace,
+    env,
+  );
+
+  try {
+    runCli(
+      ['done', '--id', '100', '--ids', '101;102', '--pr', '200', '--summary', 'This should fail'],
+      workspace,
+      env,
+    );
+    assert.fail('expected grouped done to fail when the PR omits one work item');
+  } catch (error) {
+    const stderr = String((error as { stderr?: string }).stderr ?? '');
+    assert.match(stderr, /No linked PR found for work item #102/);
+  }
+});
+
+test('orchestration commands create local run state, accept child check-ins, and finalize grouped work', (t) => {
+  const workspace = makeTempDir();
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const { binDir, gitCommandPath, azCommandPath, curlCommandPath, gitStatePath, azStatePath } =
+    installStubCommands(workspace);
+  writeConfig(workspace);
+
+  const env = {
+    PATH: prependPathEntry(binDir),
+    AEL_CMD_GIT: gitCommandPath,
+    AEL_CMD_AZ: azCommandPath,
+    AEL_CMD_CURL: curlCommandPath,
+    AEL_WRITE_GIT_STATE: gitStatePath,
+    AEL_WRITE_AZ_STATE: azStatePath,
+  };
+
+  writeAzState(azStatePath, {
+    nextWorkItemId: 300,
+    nextPrId: 400,
+    workItems: {
+      '100': {
+        id: 100,
+        fields: {
+          'System.Title': 'Ship grouped orchestration feature',
+          'System.State': 'New',
+          'System.Description':
+            'Human Summary\\nDeliver grouped orchestration support\\n\\nAgent Context\\nAdd orchestrator run manifests and grouped PR support.',
+          'System.WorkItemType': 'Task',
+          'System.Tags': 'frontend;agent-managed',
+          'Microsoft.VSTS.Common.Priority': 1,
+        },
+        relations: [],
+        discussions: [],
+        comments: [],
+      },
+      '101': {
+        id: 101,
+        fields: {
+          'System.Title': 'Report orchestration state',
+          'System.State': 'New',
+          'System.Description':
+            'Human Summary\\nExpose orchestration state in reports\\n\\nAgent Context\\nTrack active runs and child review status.',
+          'System.WorkItemType': 'Task',
+          'System.Tags': 'frontend;agent-managed',
+          'Microsoft.VSTS.Common.Priority': 2,
+        },
+        relations: [],
+        discussions: [],
+        comments: [],
+      },
+    },
+    pullRequests: [],
+  });
+
+  const orchestrated = JSON.parse(
+    runCli(['orchestrate', '--ids', '100;101', '--agent', 'codex', '--json'], workspace, env),
+  ) as {
+    ok: boolean;
+    run: {
+      runId: string;
+      granularityMode: string;
+      children: Array<{ childId: string; workItemId?: number; briefPath: string }>;
+      briefPath: string;
+    };
+  };
+  assert.equal(orchestrated.ok, true);
+  assert.equal(orchestrated.run.granularityMode, 'grouped');
+  assert.ok(orchestrated.run.children.length >= 3);
+  assert.ok(existsSync(orchestrated.run.briefPath));
+  assert.ok(
+    existsSync(join(workspace, '.ael', 'orchestration', 'runs', `${orchestrated.run.runId}.json`)),
+  );
+
+  const firstChild = orchestrated.run.children[0];
+  const firstDone = JSON.parse(
+    runCli(
+      [
+        'subagent-checkin',
+        '--run',
+        orchestrated.run.runId,
+        '--child',
+        firstChild.childId,
+        '--status',
+        'done',
+        '--summary',
+        'Implemented the assigned slice',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
+    ok: boolean;
+    child: { childId: string; awaitingOrchestratorReview: boolean; status: string };
+  };
+  assert.equal(firstDone.ok, true);
+  assert.equal(firstDone.child.status, 'done');
+  assert.equal(firstDone.child.awaitingOrchestratorReview, true);
+
+  const reportWithRun = JSON.parse(
+    runCli(
+      ['report', '--limit', '10', '--stale-days', '7', '--recent-days', '30', '--json'],
+      workspace,
+      env,
+    ),
+  ) as {
+    orchestration: {
+      activeRuns: Array<{ runId: string }>;
+      awaitingOrchestratorReview: Array<{ childId: string }>;
+    };
+  };
+  assert.equal(reportWithRun.orchestration.activeRuns[0]?.runId, orchestrated.run.runId);
+  assert.equal(
+    reportWithRun.orchestration.awaitingOrchestratorReview[0]?.childId,
+    firstChild.childId,
+  );
+
+  for (const child of orchestrated.run.children.slice(1)) {
+    runCli(
+      [
+        'subagent-checkin',
+        '--run',
+        orchestrated.run.runId,
+        '--child',
+        child.childId,
+        '--status',
+        'done',
+        '--summary',
+        `Completed ${child.childId}`,
+      ],
+      workspace,
+      env,
+    );
+  }
+
+  const finalized = JSON.parse(
+    runCli(
+      [
+        'orchestrate-finalize',
+        '--run',
+        orchestrated.run.runId,
+        '--ready',
+        '--source-branch',
+        'codex/orchestrated-test',
+        '--json',
+      ],
+      workspace,
+      env,
+    ),
+  ) as {
+    ok: boolean;
+    run: {
+      status: string;
+      finalization: { status: string; pullRequestIds: number[] };
+    };
+  };
+  assert.equal(finalized.ok, true);
+  assert.equal(finalized.run.status, 'completed');
+  assert.equal(finalized.run.finalization.status, 'finalized');
+  assert.equal(finalized.run.finalization.pullRequestIds[0], 400);
+
+  const finalAzState = JSON.parse(readFileSync(azStatePath, 'utf8')) as {
+    workItems: Record<string, { fields: Record<string, unknown> }>;
+    pullRequests: Array<{ pullRequestId: number; workItemIds: number[] }>;
+  };
+  const childIds = orchestrated.run.children
+    .map((child) => child.workItemId)
+    .filter((value): value is number => Number.isFinite(value));
+  assert.deepEqual(finalAzState.pullRequests[0]?.workItemIds, [100, 101]);
+  for (const childId of childIds) {
+    assert.equal(finalAzState.workItems[String(childId)]?.fields['System.State'], 'Closed');
+  }
 });
